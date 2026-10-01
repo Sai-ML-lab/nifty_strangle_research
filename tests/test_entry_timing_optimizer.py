@@ -49,3 +49,23 @@ def test_entry_optimizer_weekday_policy_is_exclusion():
     )
     out = apply_policy(x, frozenset({"Tuesday", "Friday"}))
     assert out["entry_weekday"].tolist() == ["Wednesday"]
+
+
+def test_entry_optimizer_merges_existing_vendor_spot_with_reference():
+    from src.entry_timing_optimizer import _merge_spot_reference
+
+    options = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-10-01 10:00", "2026-10-01 10:01"]),
+            "spot": [22000.0, float("nan")],
+        }
+    )
+    reference = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-10-01 10:00", "2026-10-01 10:01"]),
+            "spot": [21999.0, 21998.0],
+        }
+    )
+    out = _merge_spot_reference(options, reference)
+    assert "spot_spot_ref" not in out.columns
+    assert out["spot"].tolist() == [22000.0, 21998.0]
