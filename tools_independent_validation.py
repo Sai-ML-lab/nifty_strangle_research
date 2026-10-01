@@ -22,8 +22,9 @@ def compare_ledgers(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.
     # Match on trading date + expiry only. Independent vendors often timestamp
     # the same market bar differently and may round/encode strikes differently.
     keys = ["entry_date", "expiry"]
-    keep_a = keys + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in a.columns]
-    keep_b = keys + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in b.columns]
+    extra = [c for c in ["put_strike", "call_strike"] if c in a.columns and c in b.columns]
+    keep_a = keys + extra + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in a.columns]
+    keep_b = keys + extra + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in b.columns]
     a = a[keep_a].rename(columns={c: f"primary_{c}" for c in keep_a if c not in keys})
     b = b[keep_b].rename(columns={c: f"secondary_{c}" for c in keep_b if c not in keys})
     m = a.merge(b, on=keys, how="outer", indicator=True)
@@ -32,8 +33,6 @@ def compare_ledgers(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.
         m["net_pnl_diff"] = m["secondary_net_pnl"] - m["primary_net_pnl"]
     if "primary_initial_credit_points" in m and "secondary_initial_credit_points" in m:
         m["entry_credit_diff_points"] = m["secondary_initial_credit_points"] - m["primary_initial_credit_points"]
-    if {"primary_net_pnl", "secondary_net_pnl"}.issubset(matched.columns):
-        matched["abs_pnl_diff"] = matched["net_pnl_diff"].abs()
     if "primary_exit_timestamp" in m and "secondary_exit_timestamp" in m:
         m["exit_timestamp_diff_minutes"] = (
             pd.to_datetime(m["secondary_exit_timestamp"], errors="coerce")
@@ -41,6 +40,8 @@ def compare_ledgers(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.
         ).dt.total_seconds() / 60.0
 
     matched = m[m["_merge"] == "both"].copy()
+    if "net_pnl_diff" in matched.columns:
+        matched["abs_pnl_diff"] = matched["net_pnl_diff"].abs()
     overlap_start = max(a["entry_date"].min(), b["entry_date"].min()) if len(a) and len(b) else pd.NaT
     overlap_end = min(a["entry_date"].max(), b["entry_date"].max()) if len(a) and len(b) else pd.NaT
     a_overlap = a[(a["entry_date"] >= overlap_start) & (a["entry_date"] <= overlap_end)] if pd.notna(overlap_start) else a.iloc[0:0]
