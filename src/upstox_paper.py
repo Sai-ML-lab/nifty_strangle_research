@@ -67,6 +67,9 @@ class UpstoxPaperClient:
                 "Authorization": f"Bearer {token}",
             }
         )
+        self._nfo_holiday_dates: set[pd.Timestamp] | None = None
+        self._holiday_cache_year: int | None = None
+        self._holiday_cache_loaded_at: datetime | None = None
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         response = self.session.get(
@@ -87,6 +90,56 @@ class UpstoxPaperClient:
         )
         rows = payload.get("data") or []
         return pd.DataFrame(rows)
+
+    def market_holidays(self) -> pd.DataFrame:
+        payload = self._get("/v2/market/holidays")
+        rows = payload.get("data") or []
+        return pd.DataFrame(rows)
+
+    def nfo_trading_holiday_dates(self, now: datetime) -> set[pd.Timestamp]:
+        year = int(now.year)
+        stale = self._nfo_holiday_dates is not None and self._holiday_cache_year == year
+        refresh = (
+            self._nfo_holiday_dates is None
+            or self._holiday_cache_year != year
+            or self._holiday_cache_loaded_at is None
+            or (now - self._holiday_cache_loaded_at).total_seconds() >= 21600
+        )
+        if refresh:
+            try:
+                holidays = self.market_holidays()
+                dates: set[pd.Timestamp] = set()
+                if not holidays.empty and "date" in holidays.columns:
+                    for _, row in holidays.iterrows():
+                        holiday_type = str(row.get("holiday_type", "")).upper()
+                        closed = row.get("closed_exchanges")
+                        closed_exchanges = (
+                            {str(x).upper() for x in closed}
+                            if isinstance(closed, (list, tuple, set))
+                            else set()
+                        )
+                        if (
+                            holiday_type == "TRADING_HOLIDAY"
+                            and "NFO" in closed_exchanges
+                        ):
+                            parsed = pd.to_datetime(row["date"], errors="coerce")
+                            if pd.notna(parsed):
+                                dates.add(pd.Timestamp(parsed).normalize())
+                self._nfo_holiday_dates = dates
+                self._holiday_cache_year = year
+                self._holiday_cache_loaded_at = now
+            except Exception:
+                # A previously fetched calendar is preferable to falling back to
+                # weekday-only logic. If there is no known calendar, fail closed
+                # rather than risking an entry on an exchange holiday.
+                if not stale:
+                    raise
+        return self._nfo_holiday_dates or set()
+
+    def is_nfo_trading_day(self, now: datetime) -> bool:
+        if now.weekday() >= 5:
+            return False
+        return pd.Timestamp(now.date()) not in self.nfo_trading_holiday_dates(now)
 
     def find_dte6_expiry(self, now: datetime) -> pd.Timestamp | None:
         # The frozen research rule is an exact six-calendar-day expiry.
@@ -287,11 +340,13 @@ def run_paper_daemon(
     while True:
         now = datetime.now(IST)
         try:
+            is_trading_day = client.is_nfo_trading_day(now)
             open_trade = _find_open_trade(ledger)
 
             if open_trade is None:
                 if (
-                    dtime(9, 59) <= now.time() <= dtime(10, 5)
+                    is_trading_day
+                    and dtime(9, 59) <= now.time() <= dtime(10, 5)
                     and last_entry_attempt_date != now.date()
                     and not _has_signal_for_date(ledger, pd.Timestamp(now.date()))
                 ):
@@ -355,7 +410,7 @@ def run_paper_daemon(
                             _send_alert(msg)
 
             open_trade = _find_open_trade(ledger)
-            if open_trade is not None:
+            if open_trade is not None and is_trading_day and _market_open_window(now):
                 expiry = pd.Timestamp(open_trade["expiry"]).normalize()
                 put_k = float(open_trade["put_strike"])
                 call_k = float(open_trade["call_strike"])
@@ -435,7 +490,7 @@ def run_paper_daemon(
                     _send_alert(msg)
 
         except Exception as exc:
-            print(f"{now.isoformat()} PAPER_ENGINE_ERROR {type(exc).__name__}: {exc}")
+            print(f"{now.isoformat()} PAPER_ENGINE_ERROR {type(exc).__name__}: {exc}", flush=True)
 
         if once:
             break
