@@ -220,7 +220,7 @@ def test_sd_ivrv_walk_forward_selects_from_training_only():
     a = pd.DataFrame({
         "entry_timestamp": dates, "iv_rv_spread": [0.01] * 8,
         "net_pnl": [100.0] * 20 + [-50.0] * 20,
-        "data_quality_flag": ["PASS"] * 8, "sd_multiple": [1.5] * 8,
+        "data_quality_flag": ["PASS"] * 40, "sd_multiple": [1.5] * 40,
     })
     b = a.copy(); b["net_pnl"] = [-50.0] * 20 + [100.0] * 20; b["sd_multiple"] = 2.0
     out, selected, base = walk_forward_sd_ivrv(
