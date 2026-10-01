@@ -115,7 +115,15 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
         stop_cut = credit_points * cfg.stop_multiple
         hit = marks.index[(marks.debit <= profit_cut) | (marks.debit >= stop_cut)]
         hh, mm = map(int, cfg.time_exit_time.split(":"))
-        time_mask = (marks.index.weekday == cfg.time_exit_weekday) & (((marks.index.hour > hh) | ((marks.index.hour == hh) & (marks.index.minute >= mm))))
+        if getattr(cfg, "time_exit_mode", "weekday") == "days_before_expiry":
+            exit_date = (expiry - pd.Timedelta(days=int(cfg.time_exit_dte))).normalize()
+            date_mask = marks.index.normalize() == exit_date
+        else:
+            date_mask = marks.index.weekday == cfg.time_exit_weekday
+        time_mask = date_mask & (
+            (marks.index.hour > hh)
+            | ((marks.index.hour == hh) & (marks.index.minute >= mm))
+        )
         th = marks.index[time_mask]
         candidates = []
         if len(hit):
