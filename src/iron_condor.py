@@ -377,6 +377,89 @@ def build_condor_ledgers(
     }
 
 
+def diagnose_condor_coverage(
+    options_dir: str | Path,
+    spot_path: str | Path,
+    base_cfg: StrategyConfig,
+    costs: Costs,
+    wing_widths: Iterable[float],
+) -> pd.DataFrame:
+    """Explain why entries/condor variants disappear, especially in holdout periods."""
+    spot = load_spot(Path(spot_path))
+    files = []
+    for f in sorted(Path(options_dir).rglob("*.parquet")):
+        expiry = expiry_from_filename(f)
+        if expiry is not None:
+            files.append((expiry, f))
+    files.sort(key=lambda z: z[0])
+
+    chosen: dict[pd.Timestamp, tuple[pd.Timestamp, Path]] = {}
+    for expiry, f in files:
+        d = entry_date_for_expiry(expiry, base_cfg)
+        chosen.setdefault(d, (expiry, f))
+
+    widths = [float(w) for w in wing_widths]
+    counters = []
+    for i, (_, (expiry, f)) in enumerate(sorted(chosen.items()), 1):
+        raw = pd.read_parquet(f)
+        x = _prepare_expiry_data(raw, spot, costs, expiry)
+        entry_ts = entry_timestamp_for_expiry(x, expiry, base_cfg) if not x.empty else None
+        base = {"entry_date": entry_date_for_expiry(expiry, base_cfg), "expiry": expiry, "entry_timestamp": entry_ts}
+        if entry_ts is None:
+            for w in widths:
+                counters.append({**base, "requested_wing_width": w, "status": "NO_ENTRY_TIMESTAMP"})
+            continue
+
+        chain = x[x["timestamp"] == entry_ts].dropna(subset=["spot", "entry_price"]).copy()
+        if chain.empty:
+            for w in widths:
+                counters.append({**base, "requested_wing_width": w, "status": "NO_ENTRY_CHAIN"})
+            continue
+        spot0 = float(chain["spot"].iloc[0])
+        try:
+            forward = estimate_forward_from_parity(chain, spot0, base_cfg.risk_free_rate, price_column="entry_price")
+            chain["forward"] = forward
+            chain = ensure_iv_delta(chain, base_cfg.risk_free_rate, allow_iv_calc=True, price_column="entry_price")
+            atm_iv = pick_atm_iv(chain, forward, base_cfg.atm_band)
+            put, call = select_strikes(chain, forward, atm_iv, expiry, pd.Timestamp(entry_ts), base_cfg)
+            pk, ck = float(put["strike"]), float(call["strike"])
+            ps, cs = _quote(chain, pk, "PE"), _quote(chain, ck, "CE")
+            short_credit = float(ps["entry_sell_exec"] + cs["entry_sell_exec"])
+        except Exception as exc:
+            for w in widths:
+                counters.append({**base, "requested_wing_width": w, "status": "SHORT_STRIKES_UNUSABLE", "detail": type(exc).__name__})
+            continue
+
+        for w in widths:
+            try:
+                pw_k, put_w = _pick_wing(chain, pk, "PE", w)
+                cw_k, call_w = _pick_wing(chain, ck, "CE", w)
+                pw, cw = _quote(chain, pw_k, "PE"), _quote(chain, cw_k, "CE")
+                wing_debit = float(pw["buy_exec"] + cw["buy_exec"])
+                net_credit = short_credit - wing_debit
+                status = "PASS" if np.isfinite(net_credit) and net_credit >= base_cfg.min_entry_credit_points else "NET_CREDIT_BELOW_MIN"
+                counters.append({
+                    **base,
+                    "requested_wing_width": w,
+                    "put_strike": pk,
+                    "call_strike": ck,
+                    "put_wing": pw_k,
+                    "call_wing": cw_k,
+                    "actual_put_width": put_w,
+                    "actual_call_width": call_w,
+                    "short_credit_points": short_credit,
+                    "wing_debit_points": wing_debit,
+                    "net_credit_points": net_credit,
+                    "status": status,
+                })
+            except KeyError as exc:
+                counters.append({**base, "requested_wing_width": w, "put_strike": pk, "call_strike": ck, "status": "WING_UNAVAILABLE", "detail": str(exc)})
+
+        if i % 25 == 0:
+            print(f"coverage processed {i}/{len(chosen)} entry dates")
+    return pd.DataFrame(counters).sort_values(["entry_date", "requested_wing_width"])
+
+
 def summarize_condors(
     ledgers: dict[tuple[float, float, float], pd.DataFrame],
     starting_capital: float,

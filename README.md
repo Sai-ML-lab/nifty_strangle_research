@@ -305,3 +305,50 @@ The first-choice frozen research set is now:
 - iron condor with 500- and 1000-point pre-declared wings
 
 Avoid further broad parameter searches until the structural comparison and independent data validation are complete.
+
+
+## Experiment 10: accelerated robustness stage
+
+The research now avoids broad parameter optimization. Use a small frozen suite:
+
+1. Tight-wing iron condors: 100/200/300-point requested wings with 50% or 75% profit capture and 2.0x or 2.5x stops.
+2. Frozen 75% capture / 2.5x stop strangle: replay execution across 0, 0.25, 0.50, 0.75, 1.00 and 1.50 option points per leg.
+3. Tail attribution: classify losses by exit reason and loss-to-entry-credit multiple, then inspect the largest losses.
+4. Independent validation: build the same frozen strategy ledger from a secondary data source and compare matched dates/strikes, entry credits, exits and P&L.
+
+Tight-wing condors also write `condor_coverage.csv`, which distinguishes unavailable wings from insufficient net credit or missing entry timestamps. This is required before interpreting an empty holdout as a strategy result.
+
+Recommended commands:
+
+```bash
+python run_iron_condor_research.py \\
+  --options-dir data/trademarkk/processed \\
+  --spot data/trademarkk/index/NIFTY.parquet \\
+  --config config_dte6_iron_condor.yaml \\
+  --wing-width 100 200 300 \\
+  --profit-capture 0.50 0.75 \\
+  --stop-multiple 2.0 2.5 \\
+  --out-dir results/iron_condor_tight
+
+python run_slippage_sensitivity.py \\
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
+  --options-dir data/trademarkk/processed \\
+  --config config_dte6_frozen_75_25.yaml \\
+  --slippages 0 0.25 0.50 0.75 1.00 1.50 \\
+  --out-dir results/slippage_frozen_75_25
+
+python tools_tail_analysis.py \\
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
+  --out-dir results/tail_75_25
+```
+
+For independent validation, first produce an equivalent frozen trade ledger from the secondary source, then run:
+
+```bash
+python tools_independent_validation.py \\
+  --primary results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
+  --secondary <secondary-source-ledger.csv> \\
+  --out-dir results/independent_validation
+```
+
+Do not use holdout performance from the previously inspected archive as independent confirmation. The secondary-source comparison is specifically intended to detect vendor-dependent prices, missing quotes and settlement inconsistencies.

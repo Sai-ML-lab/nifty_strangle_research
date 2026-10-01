@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.iron_condor import build_condor_ledgers, summarize_condors
+from src.iron_condor import build_condor_ledgers, diagnose_condor_coverage, summarize_condors
 from src.strangle_backtest import load_config
 from src.risk_metrics import portfolio_risk_metrics
 
@@ -24,7 +24,7 @@ def main() -> None:
     ap.add_argument("--spot", required=True)
     ap.add_argument("--config", default="config_dte6_iron_condor.yaml")
     ap.add_argument("--out-dir", default="results/iron_condor")
-    ap.add_argument("--wing-width", nargs="+", type=float, default=[500.0, 1000.0])
+    ap.add_argument("--wing-width", nargs="+", type=float, default=[100.0, 200.0, 300.0])
     ap.add_argument("--profit-capture", nargs="+", type=float, default=[0.50, 0.75])
     ap.add_argument("--stop-multiple", nargs="+", type=float, default=[2.0, 2.5])
     ap.add_argument("--holdout-start", default=None, help="Optional frozen post-research holdout start; no parameter selection is performed.")
@@ -41,6 +41,9 @@ def main() -> None:
 
     summary = summarize_condors(ledgers, cfg.starting_capital)
     summary.to_csv(out / "iron_condor_summary.csv", index=False)
+
+    coverage = diagnose_condor_coverage(args.options_dir, args.spot, cfg, costs, args.wing_width)
+    coverage.to_csv(out / "condor_coverage.csv", index=False)
 
     for (width, pc, sm), ledger in ledgers.items():
         ledger.to_csv(out / f"width_{width:g}_pc_{pc:g}_stop_{sm:g}_trades.csv", index=False)
