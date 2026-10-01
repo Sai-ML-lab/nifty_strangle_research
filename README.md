@@ -258,3 +258,50 @@ python run_exit_research.py \
 ```
 
 Outputs include the full matrix, the walk-forward-selected exit sequence, the selected OOS trade ledger, the fixed 50%-capture/2x-stop control ledger, and portfolio-level risk metrics.
+
+## Experiment 8: frozen iron-condor comparison
+
+The exit-matrix result is now treated as a frozen candidate rather than an adaptive rule. The next structural comparison keeps the same DTE6 + 2-SD entry and realistic costs, then compares defined-risk iron condors using only pre-declared wing widths and exit candidates.
+
+Run:
+
+```bash
+python run_iron_condor_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_iron_condor.yaml \
+  --wing-width 500 1000 \
+  --profit-capture 0.50 0.75 \
+  --stop-multiple 2.0 2.5 \
+  --holdout-start 2026-06-01 \
+  --out-dir results/iron_condor
+```
+
+The default suite is intentionally small and pre-declared: 500/1000-point wings × 50%/75% capture × 2.0x/2.5x stop. It is a robustness comparison, not a new optimizer.
+
+Each condor ledger records the actual wing widths, maximum theoretical loss, credit-to-max-loss ratio, execution costs and data-quality checks. Condor transaction costs use 8 orders for a full entry+exit round trip.
+
+## Experiment 9: frozen post-research validation
+
+Once a candidate is frozen, use `run_frozen_validation.py` to split its trade ledger at a declared holdout date:
+
+```bash
+python run_frozen_validation.py \
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \
+           results/exit_matrix/pc_0.50_stop_2_trades.csv \
+  --labels strangle_75_2_5 strangle_50_2 \
+  --holdout-start 2026-06-01 \
+  --out results/frozen_validation_summary.csv
+```
+
+This reports development-period versus holdout-period risk metrics without re-selecting parameters.
+
+Important: the 2026-06-01 split is a **frozen post-research diagnostic**, not a pristine independent validation, because earlier exploratory work inspected the full archive through that period. A statistically clean independent validation should use a genuinely untouched future period or an independent data source.
+
+The first-choice frozen research set is now:
+- DTE6 + 2-SD entry
+- fixed 50% capture / 2x stop control
+- fixed 75% capture / 2.5x stop candidate
+- iron condor with 500- and 1000-point pre-declared wings
+
+Avoid further broad parameter searches until the structural comparison and independent data validation are complete.
