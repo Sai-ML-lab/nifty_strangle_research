@@ -39,6 +39,18 @@ def main() -> None:
     if "exit_reason" in t.columns:
         print(t["exit_reason"].value_counts(dropna=False).to_string())
 
+    if {"exit_intrinsic_points", "exit_intrinsic_gap_points"}.issubset(t.columns):
+        violations = t[(t["exit_reason"] != "expiry") & (t["exit_intrinsic_gap_points"] < -1.0)]
+        print("\nIntrinsic-value QA:")
+        print(f"early_exits_with_intrinsic_check={(t['exit_reason'] != 'expiry').sum():,}")
+        print(f"intrinsic_violations={len(violations):,}")
+        if not violations.empty:
+            print(violations[[
+                "entry_timestamp", "expiry", "exit_timestamp", "put_strike",
+                "call_strike", "exit_spot", "exit_debit_points",
+                "exit_intrinsic_points", "exit_intrinsic_gap_points", "net_pnl"
+            ]].sort_values("exit_intrinsic_gap_points").to_string(index=False))
+
     print("\nPnL:")
     print(t["net_pnl"].describe().to_string())
 
