@@ -82,8 +82,8 @@ def test_parity_forward_falls_near_spot():
 
 
 def test_baseline_next_expiry_mapping_avoids_overlap():
-    from run_batch_research import entry_timestamp_for_expiry
-    import run_batch_research as rb
+    from run_batch_research import entry_date_for_expiry
+    from src.core import StrategyConfig
 
     cfg_weekday = 2  # Wednesday
     dates = [pd.Timestamp("2023-01-19"), pd.Timestamp("2023-01-25")]
@@ -100,3 +100,6 @@ def test_baseline_next_expiry_mapping_avoids_overlap():
             mapping[d] = expiry
 
     assert mapping[pd.Timestamp("2023-01-18")] == pd.Timestamp("2023-01-19")
+
+    cfg = StrategyConfig(entry_mode="dte", target_dte=6)
+    assert entry_date_for_expiry(pd.Timestamp("2023-01-19"), cfg) == pd.Timestamp("2023-01-13")
