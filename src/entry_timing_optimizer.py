@@ -373,21 +373,48 @@ def _policy_keys(max_excluded_days: int = 2) -> list[frozenset[str]]:
     return policies
 
 
+def _net_pnl_for_credit(
+    credit_points: float,
+    *,
+    capture: float,
+    quantity: int,
+    costs: Costs,
+    trade_date: pd.Timestamp,
+) -> float:
+    sell = float(credit_points) * int(quantity)
+    buy = float(credit_points) * (1.0 - float(capture)) * int(quantity)
+    gross = float(capture) * float(credit_points) * int(quantity)
+    return float(
+        gross
+        - trade_cost(
+            sell + buy,
+            sell,
+            buy,
+            4,
+            costs,
+            pd.Timestamp(trade_date),
+        )
+    )
+
+
 def add_lot_metrics(
     trades: pd.DataFrame,
     costs: Costs,
     lots: int = 5,
     target_low: float = 6000.0,
     target_high: float = 8000.0,
+    reference_lot_size: int = 65,
 ) -> pd.DataFrame:
     x = trades.copy()
     if x.empty:
         return x
+
     qty = int(lots)
-    x["gross_pnl_points"] = x["initial_credit_points"] - x["exit_debit_points"]
-    lot_qty = qty * x["lot_size"].astype(int)
-    sell = x["initial_credit_points"] * lot_qty
-    buy = x["exit_debit_points"] * lot_qty
+    historical_qty = qty * x["lot_size"].astype(int)
+    current_qty = qty * int(reference_lot_size)
+
+    sell_hist = x["initial_credit_points"] * historical_qty
+    buy_hist = x["exit_debit_points"] * historical_qty
     x["net_pnl_5lot"] = [
         float(
             gross
@@ -401,20 +428,62 @@ def add_lot_metrics(
             )
         )
         for gross, s, b, ts in zip(
-            x["gross_pnl_points"] * lot_qty,
-            sell,
-            buy,
+            x["gross_pnl_points"] * historical_qty,
+            sell_hist,
+            buy_hist,
             x["entry_timestamp"],
         )
     ]
+
+    sell_current = x["initial_credit_points"] * current_qty
+    buy_current = x["exit_debit_points"] * current_qty
+    x["net_pnl_5lot_current"] = [
+        float(
+            gross
+            - trade_cost(
+                s + b,
+                s,
+                b,
+                4,
+                costs,
+                pd.Timestamp(ts),
+            )
+        )
+        for gross, s, b, ts in zip(
+            x["gross_pnl_points"] * current_qty,
+            sell_current,
+            buy_current,
+            x["entry_timestamp"],
+        )
+    ]
+
     x["profit_target_pnl_5lot"] = (
-        x["initial_credit_points"] * x["profit_capture"] * lot_qty
+        x["initial_credit_points"] * x["profit_capture"] * historical_qty
     )
+    x["target_net_pnl_5lot_current"] = [
+        _net_pnl_for_credit(
+            float(credit),
+            capture=float(capture),
+            quantity=int(current_qty_value),
+            costs=costs,
+            trade_date=pd.Timestamp(ts),
+        )
+        for credit, capture, current_qty_value, ts in zip(
+            x["initial_credit_points"],
+            x["profit_capture"],
+            [int(v) for v in current_qty],
+            x["entry_timestamp"],
+        )
+    ]
     x["target_band_hit_5lot"] = x["net_pnl_5lot"].between(
         float(target_low), float(target_high), inclusive="both"
     )
+    x["target_band_hit_5lot_current"] = x["target_net_pnl_5lot_current"].between(
+        float(target_low), float(target_high), inclusive="both"
+    )
+    x["target_band_rate_eligible_entry"] = x["target_band_hit_5lot_current"].astype(bool)
+    x["reference_lot_size"] = int(reference_lot_size)
     return x
-
 
 def apply_policy(trades: pd.DataFrame, exclude_weekdays: frozenset[str]) -> pd.DataFrame:
     if not exclude_weekdays:
@@ -422,7 +491,12 @@ def apply_policy(trades: pd.DataFrame, exclude_weekdays: frozenset[str]) -> pd.D
     return trades[~trades["entry_weekday"].isin(exclude_weekdays)]
 
 
-def report(trades: pd.DataFrame) -> dict:
+def report(
+    trades: pd.DataFrame,
+    *,
+    pnl_column: str = "net_pnl_5lot",
+    target_column: str = "target_band_hit_5lot",
+) -> dict:
     if trades.empty:
         return {
             "trades": 0,
@@ -438,11 +512,11 @@ def report(trades: pd.DataFrame) -> dict:
             "target_band_rate_all": np.nan,
             "target_band_rate_wins": np.nan,
         }
-    p = trades["net_pnl_5lot"].astype(float)
+    p = trades[pnl_column].astype(float)
     wins = p[p > 0]
     losses = p[p < 0]
     ordered = trades.sort_values("entry_timestamp")
-    p_ordered = ordered["net_pnl_5lot"].astype(float)
+    p_ordered = ordered[pnl_column].astype(float)
     equity = p_ordered.cumsum()
     dd = equity - equity.cummax()
     return {
@@ -456,8 +530,8 @@ def report(trades: pd.DataFrame) -> dict:
         "max_drawdown": float(dd.min()),
         "positive_trade_rate": float((p > 0).mean()),
         "median_win": float(wins.median()) if len(wins) else np.nan,
-        "target_band_rate_all": float(trades["target_band_hit_5lot"].mean()),
-        "target_band_rate_wins": float(trades.loc[p > 0, "target_band_hit_5lot"].mean()) if len(wins) else np.nan,
+        "target_band_rate_all": float(trades[target_column].mean()),
+        "target_band_rate_wins": float(trades.loc[p > 0, target_column].mean()) if len(wins) else np.nan,
     }
 
 
@@ -467,6 +541,8 @@ def evaluate_policies(
     min_trades: int = 40,
     train_only: bool = False,
     max_excluded_days: int = 2,
+    pnl_column: str = "net_pnl_5lot",
+    target_column: str = "target_band_hit_5lot",
 ) -> pd.DataFrame:
     rows = []
     base_groups = trades.groupby(["dte", "sd", "profit_capture", "stop_multiple"], dropna=False)
@@ -476,14 +552,14 @@ def evaluate_policies(
             g = apply_policy(group, excluded).sort_values("entry_timestamp")
             if len(g) < min_trades:
                 continue
-            r = report(g)
+            r = report(g, pnl_column=pnl_column, target_column=target_column)
             mid = g["entry_timestamp"].min() + (
                 g["entry_timestamp"].max() - g["entry_timestamp"].min()
             ) / 2
             first_half = g[g["entry_timestamp"] <= mid]
             second_half = g[g["entry_timestamp"] > mid]
-            r1 = report(first_half) if len(first_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
-            r2 = report(second_half) if len(second_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
+            r1 = report(first_half, pnl_column=pnl_column, target_column=target_column) if len(first_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
+            r2 = report(second_half, pnl_column=pnl_column, target_column=target_column) if len(second_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
             stable_train = (
                 np.isfinite(r1["expectancy"])
                 and np.isfinite(r2["expectancy"])
@@ -524,6 +600,9 @@ def walk_forward_select(
     target_low: float = 6000.0,
     target_high: float = 8000.0,
     max_excluded_days: int = 2,
+    pnl_column: str = "net_pnl_5lot",
+    target_column: str = "target_band_hit_5lot",
+    require_target_band: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if trades.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -544,8 +623,11 @@ def walk_forward_select(
         if test_end > end + pd.Timedelta(days=1):
             break
 
-        train = x[(x["entry_timestamp"] >= train_start) & (x["entry_timestamp"] < train_end)]
-        test = x[(x["entry_timestamp"] >= train_end) & (x["entry_timestamp"] < test_end)]
+        train = x[(x["entry_timestamp"] >= train_start) & (x["entry_timestamp"] < train_end)].copy()
+        test = x[(x["entry_timestamp"] >= train_end) & (x["entry_timestamp"] < test_end)].copy()
+        if require_target_band:
+            train = train[train["target_band_hit_5lot_current"]].copy()
+            test = test[test["target_band_hit_5lot_current"]].copy()
         if train.empty or test.empty:
             train_start = month_add(train_start, rebalance_months)
             continue
@@ -555,6 +637,8 @@ def walk_forward_select(
             min_trades=min_train_trades,
             train_only=True,
             max_excluded_days=max_excluded_days,
+            pnl_column=pnl_column,
+            target_column=target_column,
         )
         if policies.empty:
             train_start = month_add(train_start, rebalance_months)
