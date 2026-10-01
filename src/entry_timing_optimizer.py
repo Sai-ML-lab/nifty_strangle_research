@@ -667,6 +667,8 @@ def walk_forward_select(
             s for s in str(best["excluded_weekdays"]).split(",") if s and s != "NONE"
         )
         test_cfg = apply_policy(x[key_mask], excluded)
+        if require_target_band:
+            test_cfg = test_cfg[test_cfg["target_band_hit_5lot_current"]].copy()
         test_slice = test_cfg[
             (test_cfg["entry_timestamp"] >= train_end)
             & (test_cfg["entry_timestamp"] < test_end)
