@@ -60,6 +60,8 @@ def build_sd_ledgers(
         for sd in ledgers:
             cfg = replace(base_cfg, sd_multiple=sd, min_iv_rv_spread=None)
             row = single_expiry_trade(raw, spot, cfg, costs, expiry)
+            if row is not None and getattr(cfg, "exclude_quality_warnings", False) and row.get("data_quality_flag") != "PASS":
+                row = None
             if row is not None:
                 row["sd_multiple"] = float(sd)
                 ledgers[sd].append(row)
