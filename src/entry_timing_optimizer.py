@@ -471,7 +471,7 @@ def add_lot_metrics(
         for credit, capture, current_qty_value, ts in zip(
             x["initial_credit_points"],
             x["profit_capture"],
-            [int(v) for v in current_qty],
+            [current_qty] * len(x),
             x["entry_timestamp"],
         )
     ]
