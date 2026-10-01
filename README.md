@@ -530,13 +530,16 @@ python run_upstox_paper.py --poll-seconds 30
 
 The daemon automatically:
 
-1. Detects the weekly expiry exactly 6 calendar days ahead.
-2. Creates the frozen 10:00 signal.
-3. Opens a paper position using bid minus the frozen slippage assumption.
-4. Polls the held legs using executable ask plus slippage.
-5. Closes at the frozen 75% target, 2.5x stop, 1-DTE 15:00 time exit, or expiry fallback.
-6. Persists the paper ledger and a quote-by-quote monitoring log.
-7. Optionally sends a webhook alert via `PAPER_ALERT_WEBHOOK_URL`.
+1. Checks the Upstox current-year Market Holidays API and only treats an NFO date as tradable when it is not a weekend or NFO trading holiday. This prevents entry and quote polling on NSE derivatives holidays.
+2. Detects the weekly expiry exactly 6 calendar days ahead by querying the explicit target expiry date.
+3. Creates the frozen 10:00 signal.
+4. Opens a paper position using bid minus the frozen slippage assumption.
+5. Polls the held legs using executable ask plus slippage only during the market session.
+6. Closes at the frozen 75% target, 2.5x stop, 1-DTE 15:00 time exit, or expiry fallback.
+7. Persists the paper ledger and a quote-by-quote monitoring log.
+8. Optionally sends a webhook alert via `PAPER_ALERT_WEBHOOK_URL`.
+
+The holiday calendar is cached in memory for up to six hours to avoid repeated API calls. If a refresh fails, a previously fetched calendar is reused; with no known calendar, the daemon fails closed rather than risking an entry on an unknown exchange holiday.
 
 Outputs:
 
