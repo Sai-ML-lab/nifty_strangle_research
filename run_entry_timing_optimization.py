@@ -45,7 +45,7 @@ def _required_credit_points(
         gross = float(capture) * credit * qty
         return gross - (
             costs.brokerage_per_order * 4
-            + sell * 0.0015
+            + sell * costs.stt_sell_option_pct
             + (sell + buy) * costs.exchange_txn_pct
             + (sell + buy) * costs.sebi_turnover_pct
             + buy * costs.stamp_duty_buy_option_pct
