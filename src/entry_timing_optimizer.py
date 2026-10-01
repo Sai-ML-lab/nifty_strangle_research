@@ -332,10 +332,13 @@ def build_candidate_trades(
     return out.reset_index(drop=True)
 
 
-def _policy_keys() -> list[frozenset[str]]:
-    policies = [frozenset()]
-    for weekday in WEEKDAYS:
-        policies.append(frozenset({weekday}))
+def _policy_keys(max_excluded_days: int = 2) -> list[frozenset[str]]:
+    from itertools import combinations
+
+    policies: list[frozenset[str]] = [frozenset()]
+    for size in range(1, max(1, int(max_excluded_days)) + 1):
+        for combo in combinations(WEEKDAYS, size):
+            policies.append(frozenset(combo))
     return policies
 
 
@@ -432,20 +435,37 @@ def evaluate_policies(
     *,
     min_trades: int = 40,
     train_only: bool = False,
+    max_excluded_days: int = 2,
 ) -> pd.DataFrame:
     rows = []
     base_groups = trades.groupby(["dte", "sd", "profit_capture", "stop_multiple"], dropna=False)
     for key, group in base_groups:
         dte, sd, capture, stop = key
-        for excluded in _policy_keys():
-            g = apply_policy(group, excluded)
+        for excluded in _policy_keys(max_excluded_days=max_excluded_days):
+            g = apply_policy(group, excluded).sort_values("entry_timestamp")
             if len(g) < min_trades:
                 continue
             r = report(g)
+            mid = g["entry_timestamp"].min() + (
+                g["entry_timestamp"].max() - g["entry_timestamp"].min()
+            ) / 2
+            first_half = g[g["entry_timestamp"] <= mid]
+            second_half = g[g["entry_timestamp"] > mid]
+            r1 = report(first_half) if len(first_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
+            r2 = report(second_half) if len(second_half) >= max(10, min_trades // 3) else {"expectancy": np.nan, "profit_factor": np.nan}
+            stable_train = (
+                np.isfinite(r1["expectancy"])
+                and np.isfinite(r2["expectancy"])
+                and r1["expectancy"] > 0
+                and r2["expectancy"] > 0
+                and r1["profit_factor"] >= 0.9
+                and r2["profit_factor"] >= 0.9
+            )
             if train_only and (
                 not np.isfinite(r["expectancy"])
                 or r["expectancy"] <= 0
                 or r["profit_factor"] < 1.0
+                or not stable_train
             ):
                 continue
             rows.append({
@@ -455,6 +475,9 @@ def evaluate_policies(
                 "stop_multiple": float(stop),
                 "excluded_weekdays": ",".join(sorted(excluded)) if excluded else "NONE",
                 "excluded_count": len(excluded),
+                "first_half_expectancy": float(r1["expectancy"]),
+                "second_half_expectancy": float(r2["expectancy"]),
+                "stable_train": bool(stable_train),
                 **r,
             })
     return pd.DataFrame(rows)
@@ -469,6 +492,7 @@ def walk_forward_select(
     min_train_trades: int = 25,
     target_low: float = 6000.0,
     target_high: float = 8000.0,
+    max_excluded_days: int = 2,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if trades.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -495,7 +519,12 @@ def walk_forward_select(
             train_start = month_add(train_start, rebalance_months)
             continue
 
-        policies = evaluate_policies(train, min_trades=min_train_trades, train_only=True)
+        policies = evaluate_policies(
+            train,
+            min_trades=min_train_trades,
+            train_only=True,
+            max_excluded_days=max_excluded_days,
+        )
         if policies.empty:
             train_start = month_add(train_start, rebalance_months)
             continue
