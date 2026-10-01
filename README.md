@@ -48,7 +48,9 @@ Do not optimize these parameters before running the baseline. The baseline is th
 5. Only then run the exploratory sweep: SD distance, delta selection, exits, entry day and IV-vs-RV filters.
 6. Run walk-forward selection using only historical training windows.
 7. Add and compare a defined-risk iron condor.
-8. Paper trade before considering live deployment.
+8. Freeze a candidate and validate it independently.
+9. Diagnose regimes/tails without selecting a new rule.
+10. Run a genuinely prospective paper-trading ledger before considering any live deployment.
 
 ## Data
 
@@ -88,6 +90,7 @@ Do not interpret synthetic smoke-test P&L as a market result.
 ## Files
 
 - `config.yaml` — frozen baseline parameters
+- `config_dte6_frozen_75_25.yaml` — frozen 75% capture / 2.5x stop candidate
 - `src/core.py` — volatility, Black-76, strike selection, costs, historical lot sizes
 - `src/data_ingest.py` — normalization and validation
 - `src/strangle_backtest.py` — single-dataset backtester
@@ -100,20 +103,28 @@ Do not interpret synthetic smoke-test P&L as a market result.
 - `src/regime_gate.py` — train-only IV-RV regime gating
 - `run_slippage_sensitivity.py` — frozen slippage sensitivity runner
 - `run_regime_gate.py` — IV-RV regime gate runner
+- `src/regime_attribution.py` — fixed-bucket regime/event diagnostics
+- `run_regime_attribution.py` — attribution runner
+- `src/paper_trading.py` — frozen signal and paper-ledger engine
+- `run_paper_signal.py` — one as-of paper signal generator
+- `run_paper_ledger.py` — append actual paper entry/exit fills
 - `tests/` — automated tests
+
 ## Baseline audit note
 
 An October 1, 2026 full-data run produced 167 rows, but audit showed 7 Wednesdays contained two simultaneous expiries. The old batch runner could select both the current and following expiry for the same entry date. Those overlapping rows must not be used as the baseline result.
 
 The runner now keeps only the earliest eligible expiry per entry date. A ledger audit command is also included:
 
+```bash
 python tools/audit_trades.py --trades results/trademarkk_baseline/baseline_trades.csv
+```
 
 ## DTE-normalized experiment
 
 The original control is a fixed Wednesday 10:00 IST entry. It is not a like-for-like horizon across the historical expiry-day regime change: NSE moved NIFTY weekly expiry from Thursday to Tuesday for revised contracts introduced in September 2025.
 
-Use config_dte6.yaml to run a separate 6-calendar-day-before-expiry experiment. This is intended to compare similar DTE exposure across the historical expiry-day regimes; it does not replace the original control.
+Use `config_dte6.yaml` to run a separate 6-calendar-day-before-expiry experiment. This is intended to compare similar DTE exposure across the historical expiry-day regimes; it does not replace the original control.
 
 NSE references: https://nsearchives.nseindia.com/content/circulars/FAOP68685.pdf and https://nsearchives.nseindia.com/content/circulars/FAOP68747.pdf
 
@@ -170,7 +181,6 @@ The gate uses the same 12-month train / 3-month test / 3-month rebalance structu
 
 Experiment 4 separates two questions. Slippage sensitivity holds the realized trade decisions fixed and replays execution under different assumptions. Regime gating selects the IV-RV threshold in the training window and activates trading only when that training-selected rule clears a pre-declared profitability gate. These diagnostics are not full-sample parameter optimizers.
 
-
 ## Experiment 5: SD × IV-RV walk-forward + portfolio risk
 
 The next research stage jointly selects the implied-volatility SD distance and IV-RV entry threshold using only the preceding training window. The default grid is SD = 1.50, 1.75, 2.00, 2.50, 3.00 and IV-RV threshold = no filter, 0, 1, 2 vol points. The test window is untouched until selection is complete.
@@ -190,7 +200,6 @@ The runner builds each SD ledger in one expiry-by-expiry pass, then performs the
 The portfolio report includes total return, CAGR, max drawdown, weekly Sharpe/Sortino, worst week, weekly 5% CVaR, profit factor and losing streak. Weekly risk statistics include zero-trade weeks so a regime filter cannot look better merely by omitting inactive weeks from volatility calculations.
 
 Do not choose the final SD/IV-RV pair from full-sample results. Use the walk-forward-selected sequence and then validate the selected OOS ledger under frozen-decision slippage replay.
-
 
 ## Experiment 6: stability-constrained entry selection
 
@@ -241,7 +250,6 @@ The key outputs are:
 - slippage level at which the edge disappears
 
 Only after those checks should we proceed to SD/delta/exit optimization and the iron-condor comparison.
-
 
 ## Experiment 7: stability-constrained exit matrix
 
@@ -306,7 +314,6 @@ The first-choice frozen research set is now:
 
 Avoid further broad parameter searches until the structural comparison and independent data validation are complete.
 
-
 ## Experiment 10: accelerated robustness stage
 
 The research now avoids broad parameter optimization. Use a small frozen suite:
@@ -321,38 +328,37 @@ Tight-wing condors also write `condor_coverage.csv`, which distinguishes unavail
 Recommended commands:
 
 ```bash
-python run_iron_condor_research.py \\
-  --options-dir data/trademarkk/processed \\
-  --spot data/trademarkk/index/NIFTY.parquet \\
-  --config config_dte6_iron_condor.yaml \\
-  --wing-width 100 200 300 \\
-  --profit-capture 0.50 0.75 \\
-  --stop-multiple 2.0 2.5 \\
+python run_iron_condor_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_iron_condor.yaml \
+  --wing-width 100 200 300 \
+  --profit-capture 0.50 0.75 \
+  --stop-multiple 2.0 2.5 \
   --out-dir results/iron_condor_tight
 
-python run_slippage_sensitivity.py \\
-  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
-  --options-dir data/trademarkk/processed \\
-  --config config_dte6_frozen_75_25.yaml \\
-  --slippages 0 0.25 0.50 0.75 1.00 1.50 \\
+python run_slippage_sensitivity.py \
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \
+  --options-dir data/trademarkk/processed \
+  --config config_dte6_frozen_75_25.yaml \
+  --slippages 0 0.25 0.50 0.75 1.00 1.50 \
   --out-dir results/slippage_frozen_75_25
 
-python tools_tail_analysis.py \\
-  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
+python tools_tail_analysis.py \
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \
   --out-dir results/tail_75_25
 ```
 
 For independent validation, first produce an equivalent frozen trade ledger from the secondary source, then run:
 
 ```bash
-python tools_independent_validation.py \\
-  --primary results/exit_matrix/pc_0.75_stop_2.5_trades.csv \\
-  --secondary <secondary-source-ledger.csv> \\
+python tools_independent_validation.py \
+  --primary results/exit_matrix/pc_0.75_stop_2.5_trades.csv \
+  --secondary <secondary-source-ledger.csv> \
   --out-dir results/independent_validation
 ```
 
 Do not use holdout performance from the previously inspected archive as independent confirmation. The secondary-source comparison is specifically intended to detect vendor-dependent prices, missing quotes and settlement inconsistencies.
-
 
 ### Secondary source build: Rissin
 
@@ -370,7 +376,119 @@ python tools/build_rissin_long.py \
 
 For the first cross-source test, keep the same frozen DTE6 + 2-SD + 75% capture / 2.5x stop strategy and compare the resulting ledger with `tools_independent_validation.py`.
 
-
 ### Independent-validation interpretation
 
 The comparison report now distinguishes overall coverage from the actual common date window. Because the Rissin intraday series starts in October 2024, do not use the raw primary match rate across the entire 2022+ archive as the validation statistic. Use the overlap-period match rates and the distribution of P&L/credit differences. Large mean differences with small medians should trigger inspection of the detailed matched ledger for a few outlier trades.
+
+## Experiment 11: frozen regime attribution + prospective paper ledger
+
+This stage is deliberately **diagnostic and prospective, not an optimizer**.
+
+The frozen candidate is:
+
+- DTE6 entry
+- 10:00 IST
+- pure 2-SD strike placement
+- 75% premium capture
+- 2.5x initial-credit stop
+- 1-DTE, 15:00 time exit
+- no IV-RV filter
+- 1 historical/current lot
+
+The code rejects a paper-signal configuration if any of these strategy parameters are changed. Each signal also stores a strategy specification hash so later ledger rows can be audited back to the frozen contract.
+
+### 11A. Regime/event attribution
+
+Run diagnostic buckets without selecting any bucket as a trading rule:
+
+```bash
+python run_regime_attribution.py \
+  --trades results/exit_matrix/pc_0.75_stop_2.5_trades.csv \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --out-dir results/regime_attribution
+```
+
+Outputs:
+
+- `attribution_trades.csv` — one enriched row per historical trade.
+- `regime_summary.csv` — fixed, pre-declared diagnostic buckets for IV-RV spread, RV20, entry credit, entry gap, maximum spot move, exit reason, loss size, year and quarter.
+
+The buckets are intentionally fixed. Do not pick thresholds after seeing which bucket made the most money.
+
+### 11B. Generate one frozen paper signal
+
+The signal generator accepts an **as-of snapshot**. It does not inspect option prices after the supplied timestamp.
+
+```bash
+python run_paper_signal.py \
+  --options <asof-options-snapshot.parquet> \
+  --spot <nifty-spot-history.parquet> \
+  --expiry YYYY-MM-DD \
+  --as-of "YYYY-MM-DD 10:00" \
+  --config config_dte6_frozen_75_25.yaml \
+  --out results/paper/signal.csv
+```
+
+A READY signal records:
+
+- entry spot and forward
+- ATM IV and pre-entry RV20
+- the 2-SD lower/upper boundaries
+- selected PE/CE strikes and deltas
+- bid/ask/mid prices
+- planned executable entry prices
+- initial credit
+- profit-target and stop debit thresholds
+- historical lot size
+- scheduled time exit
+- strategy ID and specification hash
+
+It does **not** record a future P&L.
+
+### 11C. Initialize and update the paper ledger
+
+Initialize:
+
+```bash
+python run_paper_ledger.py \
+  --action init \
+  --signals results/paper/signal.csv \
+  --ledger results/paper/paper_ledger.csv
+```
+
+Record actual entry fills:
+
+```bash
+python run_paper_ledger.py \
+  --action entry \
+  --ledger results/paper/paper_ledger.csv \
+  --signal-id <signal-id> \
+  --fill-timestamp "YYYY-MM-DD 10:01" \
+  --put-fill <price> \
+  --call-fill <price>
+```
+
+Record actual exit fills:
+
+```bash
+python run_paper_ledger.py \
+  --action exit \
+  --ledger results/paper/paper_ledger.csv \
+  --signal-id <signal-id> \
+  --fill-timestamp "YYYY-MM-DD HH:MM" \
+  --put-fill <price> \
+  --call-fill <price> \
+  --exit-reason profit_target|stop|time_exit|expiry|manual
+```
+
+The ledger calculates gross P&L and the same transaction-cost model used by the backtest. It also flags whether the recorded fill/reason is consistent with the frozen exit rules.
+
+### Prospective validation rule
+
+From the point at which this stage begins, do not change the frozen strategy parameters in response to paper-trading outcomes. Record misses, data failures and execution slippage as observations.
+
+The research question is now:
+
+> Does the frozen historical edge survive unchanged when future signals and fills are recorded prospectively?
+
+Only after enough prospective observations should we reconsider the model itself.
