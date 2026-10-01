@@ -53,6 +53,25 @@ POLICY_COLUMNS = [
 ]
 
 
+WALK_FORWARD_SELECTION_COLUMNS = [
+    "train_start",
+    "train_end",
+    "test_start",
+    "test_end",
+    "selected_dte",
+    "selected_sd",
+    "selected_profit_capture",
+    "selected_stop_multiple",
+    "excluded_weekdays",
+    "train_trades",
+    "train_expectancy_5lot",
+    "train_profit_factor",
+    "train_median_win_5lot",
+    "train_target_band_rate_wins",
+    "test_trades",
+]
+
+
 def load_spot(path: Path) -> pd.DataFrame:
     raw = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
     x = normalize_spot_file(raw).sort_values("timestamp").copy()
@@ -753,5 +772,10 @@ def walk_forward_select(
 
         train_start = month_add(train_start, rebalance_months)
 
+    selected = (
+        pd.DataFrame(selected_rows, columns=WALK_FORWARD_SELECTION_COLUMNS)
+        if selected_rows
+        else pd.DataFrame(columns=WALK_FORWARD_SELECTION_COLUMNS)
+    )
     oos = pd.concat(oos_rows, ignore_index=True) if oos_rows else pd.DataFrame()
-    return pd.DataFrame(selected_rows), oos
+    return selected, oos
