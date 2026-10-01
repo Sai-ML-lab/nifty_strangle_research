@@ -607,3 +607,49 @@ Key outputs:
 - `target_credit_requirements.csv` — initial credit needed for 5 lots to net ₹6K/₹7K/₹8K at each tested capture rate.
 
 Do not merge this branch into `main` until the walk-forward OOS results, execution sensitivity and independent-data checks support the change.
+
+
+## Research branch: adaptive rupee targets + session timing
+
+Branch: `research/adaptive-rupee-target`
+
+This branch is exploratory and does not modify the frozen paper-trading strategy on `main`. It tests a cleaner target-oriented formulation:
+
+- entry timing is measured in trading sessions before expiry: E-2, E-3, E-4, E-5, E-6;
+- strike placement is tested at 1.50, 1.75, 2.00 and 2.25 SD;
+- the exit target is a fixed **net rupee amount** for the current position size, rather than a fixed percentage of premium;
+- target levels are ₹6,000, ₹7,000 and ₹8,000 for 5 current NIFTY lots (5 × 65 = 325 quantity);
+- the target debit is solved from the exact repository transaction-cost model, including date-aware STT;
+- a trade is retained only when the requested rupee target is mathematically reachable from the entry credit;
+- the stop remains 2.0x or 2.5x initial credit;
+- walk-forward selection requires positive expectancy and PF >= 1 in both training halves; unstable folds are not silently selected.
+
+Run:
+
+```bash
+python run_adaptive_rupee_target_optimization.py \
+  --options-dir /absolute/path/to/data/trademarkk/processed \
+  --spot /absolute/path/to/data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_frozen_75_25.yaml \
+  --out-dir results/adaptive_rupee_target \
+  --lots 5 \
+  --reference-lot-size 65 \
+  --session-offsets 2 3 4 5 6 \
+  --sds 1.5 1.75 2.0 2.25 \
+  --targets 6000 7000 8000 \
+  --stop-multiples 2.0 2.5
+```
+
+Outputs include:
+
+```text
+adaptive_candidate_trades.csv
+adaptive_full_sample_policies.csv
+adaptive_walk_forward_selection.csv
+adaptive_walk_forward_oos_trades.csv
+adaptive_walk_forward_oos_report.csv
+adaptive_oos_by_target.csv
+adaptive_target_capture_summary.csv
+```
+
+Interpret the fixed-rupee target as an exit objective, not a guarantee. The research decision remains driven by out-of-sample expectancy, profit factor, tail losses, drawdown, slippage sensitivity and independent-data validation.
