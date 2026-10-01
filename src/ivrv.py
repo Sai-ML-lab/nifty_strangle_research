@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Iterable
 
 import numpy as np
@@ -44,10 +43,14 @@ def threshold_sweep(
     exclude_quality_warnings: bool = True,
 ) -> pd.DataFrame:
     x = _clean_trades(trades, exclude_quality_warnings=exclude_quality_warnings)
-    rows = []
+    rows = [{"filter_enabled": False, "min_iv_rv_spread_pct": np.nan, **_stats(x)}]
     for threshold in thresholds:
         y = x[x["iv_rv_spread"] >= float(threshold) / 100.0]
-        rows.append({"min_iv_rv_spread_pct": float(threshold), **_stats(y)})
+        rows.append({
+            "filter_enabled": True,
+            "min_iv_rv_spread_pct": float(threshold),
+            **_stats(y),
+        })
     return pd.DataFrame(rows)
 
 
