@@ -222,6 +222,7 @@ def main() -> None:
 
     rows = []
     skipped_not_next = 0
+    skipped_quality = 0
     for i, (expiry, f) in enumerate(parsed, 1):
         entry_date = entry_date_for_expiry(expiry, cfg)
         if next_expiry_by_entry_date.get(entry_date) != expiry:
@@ -231,20 +232,26 @@ def main() -> None:
         raw = pd.read_parquet(f)
         row = single_expiry_trade(raw, spot, cfg, costs, expiry)
         if row is not None:
-            rows.append(row)
+            if cfg.exclude_quality_warnings and row.get("data_quality_flag") != "PASS":
+                skipped_quality += 1
+            else:
+                rows.append(row)
 
         if i % 25 == 0:
             print(
                 f"processed {i}/{len(parsed)} expiries; trades={len(rows)}; "
-                f"skipped_non_next={skipped_not_next}"
+                f"skipped_non_next={skipped_not_next}; skipped_quality={skipped_quality}"
             )
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     trades = pd.DataFrame(rows).sort_values("entry_timestamp") if rows else pd.DataFrame()
     trades.to_csv(out / "baseline_trades.csv", index=False)
-    pd.Series(performance_report(trades, cfg.starting_capital)).to_csv(out / "baseline_report.csv")
-    print(pd.Series(performance_report(trades, cfg.starting_capital)).to_string())
+    report = performance_report(trades, cfg.starting_capital)
+    report["skipped_non_next_expiries"] = skipped_not_next
+    report["skipped_quality_warnings"] = skipped_quality
+    pd.Series(report).to_csv(out / "baseline_report.csv")
+    print(pd.Series(report).to_string())
 
 
 if __name__ == "__main__":
