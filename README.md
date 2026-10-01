@@ -498,9 +498,9 @@ Only after enough prospective observations should we reconsider the model itself
 
 The repository also includes an always-on paper-trading daemon backed by Upstox market data. It is deliberately **paper-only**: it never calls any order-placement API.
 
-Upstox currently documents an Analytics Token with one-year validity and read-only access to Market Quote, Historical Data, Option Chain and WebSocket APIs, so it is the recommended credential for this workflow rather than a daily OAuth token. citeturn603084search0turn603084search8
+Upstox currently documents an Analytics Token with one-year validity and read-only access to Market Quote, Historical Data, Option Chain and WebSocket APIs, so it is the recommended credential for this workflow rather than a daily OAuth token.
 
-The daemon uses the Upstox Option Chain endpoint for the frozen entry and held-leg quotes. The endpoint exposes underlying spot, bid/ask, volume, OI, IV and delta for each strike. citeturn574693view0
+The daemon uses the Upstox Option Chain endpoint for the frozen entry and held-leg quotes. The endpoint exposes underlying spot, bid/ask, volume, OI, IV and delta for each strike.
 
 Create a local secrets file from the example:
 
