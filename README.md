@@ -97,3 +97,18 @@ Do not interpret synthetic smoke-test P&L as a market result.
 - `tools/download_trademarkk.py` — free data downloader
 - `tools/build_trademarkk_long.py` — per-expiry normalizer
 - `tests/` — automated tests
+## Baseline audit note
+
+An October 1, 2026 full-data run produced 167 rows, but audit showed 7 Wednesdays contained two simultaneous expiries. The old batch runner could select both the current and following expiry for the same entry date. Those overlapping rows must not be used as the baseline result.
+
+The runner now keeps only the earliest eligible expiry per entry date. A ledger audit command is also included:
+
+python tools/audit_trades.py --trades results/trademarkk_baseline/baseline_trades.csv
+
+## DTE-normalized experiment
+
+The original control is a fixed Wednesday 10:00 IST entry. It is not a like-for-like horizon across the historical expiry-day regime change: NSE moved NIFTY weekly expiry from Thursday to Tuesday for revised contracts introduced in September 2025.
+
+Use config_dte6.yaml to run a separate 6-calendar-day-before-expiry experiment. This is intended to compare similar DTE exposure across the historical expiry-day regimes; it does not replace the original control.
+
+NSE references: https://nsearchives.nseindia.com/content/circulars/FAOP68685.pdf and https://nsearchives.nseindia.com/content/circulars/FAOP68747.pdf
