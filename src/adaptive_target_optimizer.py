@@ -391,7 +391,7 @@ def build_adaptive_target_trades(
                 earliest[key] = expiry
 
         for offset in session_offsets:
-            entry_date = session_entry_date(x, expiry, int(offset))
+            entry_date = session_entry_date(spot, expiry, int(offset))
             if entry_date is None or earliest.get((int(offset), entry_date)) != expiry:
                 continue
             entry_ts = _entry_timestamp(x, entry_date, base_cfg.entry_time)
