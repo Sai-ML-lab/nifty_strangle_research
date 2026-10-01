@@ -155,7 +155,7 @@ def walk_forward_stable_entry(
     min_train_trades: int = 20,
     min_subperiod_trades: int = 8,
     fixed_sd: float = 2.0,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     nonempty = [x for x in ledgers.values() if not x.empty]
     if not nonempty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
