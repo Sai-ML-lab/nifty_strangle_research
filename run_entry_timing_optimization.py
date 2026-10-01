@@ -89,8 +89,14 @@ def main() -> None:
         default=[str(x) for x in DEFAULT_STOP_MULTIPLES],
     )
     ap.add_argument("--lots", type=int, default=5)
+    ap.add_argument("--reference-lot-size", type=int, default=65)
     ap.add_argument("--target-low", type=float, default=6000.0)
     ap.add_argument("--target-high", type=float, default=8000.0)
+    ap.add_argument(
+        "--require-targetable-band",
+        action="store_true",
+        help="Keep only entries whose ex-ante current-size target P&L is within the requested rupee band.",
+    )
     ap.add_argument("--min-train-trades", type=int, default=25)
     ap.add_argument("--min-full-sample-trades", type=int, default=40)
     ap.add_argument("--max-excluded-weekdays", type=int, default=2)
@@ -131,11 +137,24 @@ def main() -> None:
         lots=args.lots,
         target_low=args.target_low,
         target_high=args.target_high,
+        reference_lot_size=args.reference_lot_size,
+    )
+    print(
+        "Candidate table built: "
+        f"{len(candidates):,} rows; "
+        f"current-size targetable rows="
+        f"{int(candidates["target_band_hit_5lot_current"].sum()):,}"
     )
     candidates.to_csv(out / "candidate_trades.csv", index=False)
 
+    analysis_candidates = (
+        candidates[candidates["target_band_hit_5lot_current"]].copy()
+        if args.require_targetable_band
+        else candidates
+    )
+
     # Stage A: timing diagnostics with the currently frozen 2-SD / 75% / 2.5x mechanics.
-    timing = candidates[
+    timing = analysis_candidates[
         candidates["sd"].eq(2.0)
         & candidates["profit_capture"].eq(0.75)
         & candidates["stop_multiple"].eq(2.5)
@@ -144,6 +163,8 @@ def main() -> None:
         timing,
         min_trades=args.min_full_sample_trades,
         max_excluded_days=args.max_excluded_weekdays,
+        pnl_column="net_pnl_5lot_current",
+        target_column="target_band_hit_5lot_current",
     )
     timing_policies.sort_values(
         ["expectancy", "profit_factor"],
@@ -152,9 +173,11 @@ def main() -> None:
 
     # Stage B: joint but walk-forward-controlled tuning.
     full_policies = evaluate_policies(
-        candidates,
+        analysis_candidates,
         min_trades=args.min_full_sample_trades,
         max_excluded_days=args.max_excluded_weekdays,
+        pnl_column="net_pnl_5lot_current",
+        target_column="target_band_hit_5lot_current",
     )
     full_policies.sort_values(
         ["expectancy", "profit_factor"],
@@ -170,12 +193,19 @@ def main() -> None:
         target_low=args.target_low,
         target_high=args.target_high,
         max_excluded_days=args.max_excluded_weekdays,
+        pnl_column="net_pnl_5lot_current",
+        target_column="target_band_hit_5lot_current",
+        require_target_band=args.require_targetable_band,
     )
     selected.to_csv(out / "walk_forward_selection.csv", index=False)
     oos.to_csv(out / "walk_forward_oos_trades.csv", index=False)
 
     if not oos.empty:
-        oos_report = report(oos)
+        oos_report = report(
+            oos,
+            pnl_column="net_pnl_5lot_current",
+            target_column="target_band_hit_5lot_current",
+        )
         oos_report["positive_test_folds"] = (
             selected.get("test_trades", pd.Series(dtype=float))
             .gt(0).sum()
@@ -193,7 +223,7 @@ def main() -> None:
             credit = _required_credit_points(
                 target_rupees=target,
                 lots=args.lots,
-                lot_size=65,
+                lot_size=args.reference_lot_size,
                 capture=float(capture),
                 costs=costs,
             )
