@@ -35,6 +35,9 @@ costs:
   gst_pct: 0.18
   slippage_points_per_leg: 0.50
 
+data_quality:
+  exclude_warnings: true
+
 backtest:
   starting_capital: 1000000
   lots: 1
