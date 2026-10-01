@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -76,7 +77,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     cfg, costs, _ = load_config(args.config)
-    cfg = cfg.__class__(**{**cfg.__dict__, "lots": 1})
+    cfg = replace(cfg, lots=1)
     spot = load_spot(Path(args.spot))
 
     session_offsets = _ints(args.session_offsets)
