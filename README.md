@@ -191,6 +191,28 @@ The portfolio report includes total return, CAGR, max drawdown, weekly Sharpe/So
 
 Do not choose the final SD/IV-RV pair from full-sample results. Use the walk-forward-selected sequence and then validate the selected OOS ledger under frozen-decision slippage replay.
 
+
+## Experiment 6: stability-constrained entry selection
+
+Experiment 6 treats parameter instability as a first-class risk. A candidate SD × IV-RV rule must meet the total training minimums and show non-negative expectancy in both calendar halves of the training window. If no candidate qualifies, the model chooses NO TRADE.
+
+Three models are evaluated on the same walk-forward folds:
+- adaptive SD + adaptive IV-RV threshold
+- fixed 2-SD + adaptive IV-RV threshold
+- fixed 2-SD + no IV-RV filter control
+
+Run:
+
+```bash
+python run_stable_entry_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6.yaml \
+  --out-dir results/stable_entry
+```
+
+The selector is deliberately not allowed to force a trade. This makes regime avoidance an explicit model outcome rather than a post-hoc interpretation.
+
 ## Data-quality handling
 
 The batch runner records `data_quality_flag` and `exit_intrinsic_gap_points`. An early-exit quote is flagged when its combined buy debit is more than 1 point below the intrinsic value implied by the recorded NIFTY spot.
