@@ -198,3 +198,38 @@ def test_regime_gate_uses_training_only_for_activation():
     assert not out.empty
     assert bool(out.iloc[0]["regime_gate_pass"]) is False
     assert out.iloc[0]["gated_test_trades"] == 0
+
+def test_portfolio_risk_metrics_include_weekly_risk():
+    from src.risk_metrics import portfolio_risk_metrics
+    t = pd.DataFrame({
+        "entry_timestamp": pd.to_datetime(["2024-01-03", "2024-01-10", "2024-01-17", "2024-01-24"]),
+        "exit_timestamp": pd.to_datetime(["2024-01-04", "2024-01-11", "2024-01-18", "2024-01-25"]),
+        "net_pnl": [100.0, -50.0, 200.0, -25.0],
+    })
+    out = portfolio_risk_metrics(t, 10000.0)
+    assert out["trades"] == 4
+    assert out["total_net_pnl"] == 225.0
+    assert out["ending_capital"] == 10225.0
+    assert "weekly_sharpe" in out
+    assert "weekly_cvar5_pnl" in out
+
+
+def test_sd_ivrv_walk_forward_selects_from_training_only():
+    from src.sd_ivrv import walk_forward_sd_ivrv
+    dates = pd.to_datetime([
+        "2024-01-03", "2024-01-10", "2024-02-07", "2024-02-14",
+        "2024-07-03", "2024-07-10", "2024-08-07", "2024-08-14",
+    ])
+    a = pd.DataFrame({
+        "entry_timestamp": dates, "iv_rv_spread": [0.01] * 8,
+        "net_pnl": [100.0, 120.0, 110.0, 90.0, -50.0, -50.0, -50.0, -50.0],
+        "data_quality_flag": ["PASS"] * 8, "sd_multiple": [1.5] * 8,
+    })
+    b = a.copy(); b["net_pnl"] = [-50.0, -50.0, -50.0, -50.0, 100.0, 120.0, 110.0, 90.0]; b["sd_multiple"] = 2.0
+    out, selected, base = walk_forward_sd_ivrv(
+        {1.5: a, 2.0: b}, thresholds=[None], train_months=6, test_months=3, rebalance_months=3, min_train_trades=1
+    )
+    assert not out.empty
+    assert set([1.5, 2.0]) >= set(out["selected_sd"].dropna().unique())
+    assert len(selected) > 0
+    assert len(base) > 0
