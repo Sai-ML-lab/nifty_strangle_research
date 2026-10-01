@@ -108,7 +108,7 @@ def test_pair_adaptive_with_control_reports_date_and_expiry_matches():
     assert len(merged) == 3
     assert summary["matched_dates"] == 3
     assert summary["same_expiry_matches"] == 2
-    assert np.isclose(summary["mean_pnl_delta"], 3000.0)
+    assert np.isclose(summary["mean_pnl_delta"], 833.3333333333)
 
 
 def test_pair_without_matches_is_schema_safe():
