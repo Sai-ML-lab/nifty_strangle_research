@@ -151,3 +151,30 @@ def test_ivrv_no_filter_keeps_missing_rv_trades():
     out = threshold_sweep(t, thresholds=[2.0])
     base = out[out["filter_enabled"] == False].iloc[0]
     assert base["trades"] == 3
+
+
+def test_frozen_slippage_price_adjustment():
+    from src.slippage_replay import executable_sell_price, executable_buy_price
+    row = pd.Series({"bid": 100.0, "ask": 110.0, "entry_price": 105.0, "ltp": 108.0})
+    assert executable_sell_price(row, 0.0) == 100.0
+    assert executable_sell_price(row, 0.5) == 99.5
+    assert executable_buy_price(row, 0.0) == 110.0
+    assert executable_buy_price(row, 0.5) == 110.5
+
+
+def test_regime_gate_uses_training_only_for_activation():
+    from src.regime_gate import walk_forward_ivrv_with_regime_gate
+    dates = pd.date_range("2024-01-03", periods=30, freq="7D")
+    t = pd.DataFrame({
+        "entry_timestamp": dates,
+        "iv_rv_spread": [0.01] * 30,
+        "net_pnl": [-20.0] * 20 + [100.0] * 10,
+        "data_quality_flag": ["PASS"] * 30,
+    })
+    out = walk_forward_ivrv_with_regime_gate(
+        t, thresholds=[0.0], train_months=3, test_months=3, rebalance_months=3,
+        min_train_trades=1, min_train_expectancy=0.0, min_train_profit_factor=1.0,
+    )
+    assert not out.empty
+    assert bool(out.iloc[0]["regime_gate_pass"]) is False
+    assert out.iloc[0]["gated_test_trades"] == 0
