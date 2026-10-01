@@ -369,3 +369,8 @@ python tools/build_rissin_long.py \
 ```
 
 For the first cross-source test, keep the same frozen DTE6 + 2-SD + 75% capture / 2.5x stop strategy and compare the resulting ledger with `tools_independent_validation.py`.
+
+
+### Independent-validation interpretation
+
+The comparison report now distinguishes overall coverage from the actual common date window. Because the Rissin intraday series starts in October 2024, do not use the raw primary match rate across the entire 2022+ archive as the validation statistic. Use the overlap-period match rates and the distribution of P&L/credit differences. Large mean differences with small medians should trigger inspection of the detailed matched ledger for a few outlier trades.
