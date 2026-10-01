@@ -73,14 +73,18 @@ def _candidate_score(
     threshold: float | None,
     min_train_trades: int,
     min_subperiod_trades: int,
+    train_start: pd.Timestamp | None = None,
+    train_end: pd.Timestamp | None = None,
 ) -> tuple[bool, dict]:
     y = _filter_trades(train, threshold)
     if len(y) < min_train_trades:
         return False, {"trades": len(y)}
     y = y.sort_values("entry_timestamp")
-    mid = y["entry_timestamp"].min() + (y["entry_timestamp"].max() - y["entry_timestamp"].min()) / 2
-    first = y[y["entry_timestamp"] <= mid]
-    second = y[y["entry_timestamp"] > mid]
+    start = pd.Timestamp(train_start) if train_start is not None else pd.Timestamp(y["entry_timestamp"].min()).normalize()
+    end = pd.Timestamp(train_end) if train_end is not None else pd.Timestamp(y["entry_timestamp"].max()).normalize() + pd.Timedelta(days=1)
+    mid = start + (end - start) / 2
+    first = y[(y["entry_timestamp"] >= start) & (y["entry_timestamp"] < mid)]
+    second = y[(y["entry_timestamp"] >= mid) & (y["entry_timestamp"] < end)]
     total = _stats(y)
     first_s = _stats(first)
     second_s = _stats(second)
@@ -120,7 +124,7 @@ def _select_stable_candidate(
         e = pd.to_datetime(ledger["entry_timestamp"])
         train = ledger[(e >= train_start) & (e < train_end)].copy()
         for threshold in thresholds:
-            eligible, score = _candidate_score(train, threshold, min_train_trades, min_subperiod_trades)
+            eligible, score = _candidate_score(train, threshold, min_train_trades, min_subperiod_trades, train_start, train_end)
             if eligible:
                 candidates.append((float(sd), threshold, score))
     if not candidates:
