@@ -7,3 +7,4 @@ pyyaml>=6.0
 jupyter>=1.0
 huggingface_hub>=0.24
 pytest>=8.0
+requests>=2.32
