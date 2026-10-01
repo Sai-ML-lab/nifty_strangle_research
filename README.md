@@ -150,6 +150,7 @@ Replay slippage on a **frozen trade ledger**:
 python run_slippage_sensitivity.py \
   --trades results/trademarkk_dte6_ivrv2/baseline_trades.csv \
   --options-dir data/trademarkk/processed \
+  --config config_dte6_ivrv2.yaml \
   --out-dir results/slippage_replay
 ```
 
