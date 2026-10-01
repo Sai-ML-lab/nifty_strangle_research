@@ -183,3 +183,18 @@ def test_entry_optimizer_empty_walk_forward_selection_preserves_schema():
     assert selected.empty
     assert list(selected.columns) == WALK_FORWARD_SELECTION_COLUMNS
     assert oos.empty
+
+
+def test_entry_optimizer_target_gate_modes():
+    from src.entry_timing_optimizer import apply_target_gate
+
+    x = pd.DataFrame({"target_net_pnl_5lot_current": [5000.0, 6500.0, 8500.0]})
+    assert len(apply_target_gate(x, "none", 6000, 8000)) == 3
+    assert len(apply_target_gate(x, "floor", 6000, 8000)) == 2
+    assert len(apply_target_gate(x, "band", 6000, 8000)) == 1
+
+
+def test_entry_optimizer_zero_weekday_exclusions_means_none():
+    from src.entry_timing_optimizer import _policy_keys
+
+    assert _policy_keys(0) == [frozenset()]
