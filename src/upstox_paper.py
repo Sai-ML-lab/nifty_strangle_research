@@ -89,22 +89,21 @@ class UpstoxPaperClient:
         return pd.DataFrame(rows)
 
     def find_dte6_expiry(self, now: datetime) -> pd.Timestamp | None:
+        # The frozen research rule is an exact six-calendar-day expiry.
+        # Query the exact target date instead of relying on relative-week labels.
         target = pd.Timestamp(now.date() + timedelta(days=6))
-        expiries: set[pd.Timestamp] = set()
-        for ref in ("current_week", "next_week"):
-            contracts = self.option_contracts(ref)
-            if contracts.empty or "expiry" not in contracts:
-                continue
-            for value in contracts["expiry"].dropna().unique():
-                expiry = pd.Timestamp(value).normalize()
-                weekly = bool(
-                    contracts.loc[contracts["expiry"].astype(str) == str(value), "weekly"].fillna(True).iloc[0]
-                    if "weekly" in contracts.columns
-                    else True
-                )
-                if weekly:
-                    expiries.add(expiry)
-        matches = sorted(e for e in expiries if e == target)
+        contracts = self.option_contracts(target.strftime("%Y-%m-%d"))
+        if contracts.empty or "expiry" not in contracts.columns:
+            return None
+
+        weekly = contracts
+        if "weekly" in contracts.columns:
+            weekly = contracts[contracts["weekly"].fillna(False).astype(bool)]
+        if weekly.empty:
+            return None
+
+        expiries = pd.to_datetime(weekly["expiry"], errors="coerce").dropna().dt.normalize()
+        matches = sorted(set(expiries[expiries.eq(target.normalize())]))
         return matches[0] if matches else None
 
     def option_chain(self, expiry: pd.Timestamp) -> list[dict[str, Any]]:
@@ -277,6 +276,13 @@ def run_paper_daemon(
 
     ledger = _load_paper_state(ledger_path)
     last_entry_attempt_date: pd.Timestamp | None = None
+
+    print(
+        f"{datetime.now(IST).isoformat()} "
+        f"{FROZEN_STRATEGY_ID} PAPER_DAEMON_STARTED "
+        f"config={config_path} poll_seconds={poll_seconds}",
+        flush=True,
+    )
 
     while True:
         now = datetime.now(IST)
