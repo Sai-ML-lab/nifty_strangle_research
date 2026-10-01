@@ -233,3 +233,31 @@ def test_sd_ivrv_walk_forward_selects_from_training_only():
     assert set([1.5, 2.0]) >= set(out["selected_sd"].dropna().unique())
     assert len(selected) > 0
     assert len(base) > 0
+
+def test_stable_selector_rejects_one_bad_training_half():
+    from src.stable_entry import _candidate_score
+    dates = pd.date_range("2024-01-01", periods=20, freq="15D")
+    t = pd.DataFrame({
+        "entry_timestamp": dates,
+        "iv_rv_spread": [0.01] * 20,
+        "net_pnl": [100.0] * 10 + [-100.0] * 10,
+        "data_quality_flag": ["PASS"] * 20,
+    })
+    eligible, score = _candidate_score(t, 0.0, min_train_trades=10, min_subperiod_trades=5)
+    assert eligible is False
+    assert score["first_half_expectancy"] > 0
+    assert score["second_half_expectancy"] < 0
+
+
+def test_stable_selector_allows_consistent_training_candidate():
+    from src.stable_entry import _candidate_score
+    dates = pd.date_range("2024-01-01", periods=20, freq="15D")
+    t = pd.DataFrame({
+        "entry_timestamp": dates,
+        "iv_rv_spread": [0.01] * 20,
+        "net_pnl": [100.0] * 20,
+        "data_quality_flag": ["PASS"] * 20,
+    })
+    eligible, score = _candidate_score(t, 0.0, min_train_trades=10, min_subperiod_trades=5)
+    assert eligible is True
+    assert score["expectancy"] == 100.0
