@@ -59,17 +59,15 @@ def _condor_intrinsic(spot: float, put_wing: float, put_short: float, call_short
     return float(put_spread + call_spread)
 
 
-def single_expiry_condor_trade(
+def _prepare_expiry_data(
     raw: pd.DataFrame,
     spot: pd.DataFrame,
-    cfg: StrategyConfig,
     costs: Costs,
     expiry: pd.Timestamp,
-    wing_width: float,
-) -> dict | None:
-    """Backtest one fixed-width iron condor with the same DTE6 + 2-SD entry logic."""
+) -> pd.DataFrame:
+    """Normalize and join one expiry exactly once for variant reuse."""
     if raw.empty:
-        return None
+        return pd.DataFrame()
 
     from src.data_ingest import normalize_options_vendor_file
 
@@ -84,6 +82,25 @@ def single_expiry_condor_trade(
     x["entry_price"] = pd.to_numeric(x[entry_column], errors="coerce")
     x = add_executable_prices(x, slippage_points=costs.slippage_points_per_leg)
     x["expiry"] = pd.Timestamp(expiry).normalize()
+    return x
+
+
+def single_expiry_condor_trade(
+    raw: pd.DataFrame,
+    spot: pd.DataFrame,
+    cfg: StrategyConfig,
+    costs: Costs,
+    expiry: pd.Timestamp,
+    wing_width: float,
+    prepared: bool = False,
+) -> dict | None:
+    """Backtest one fixed-width iron condor with the same DTE6 + 2-SD entry logic."""
+    if raw.empty:
+        return None
+
+    x = raw.copy() if prepared else _prepare_expiry_data(raw, spot, costs, expiry)
+    if x.empty:
+        return None
 
     entry_ts = entry_timestamp_for_expiry(x, expiry, cfg)
     if entry_ts is None:
@@ -343,9 +360,10 @@ def build_condor_ledgers(
     # Read each expiry once; only the pre-declared structure/exit candidates vary.
     for i, (_, (expiry, f)) in enumerate(sorted(chosen.items()), 1):
         raw = pd.read_parquet(f)
+        prepared = _prepare_expiry_data(raw, spot, costs, expiry)
         for width, pc, sm in keys:
             cfg = replace(base_cfg, profit_capture=pc, stop_multiple=sm, min_iv_rv_spread=None)
-            row = single_expiry_condor_trade(raw, spot, cfg, costs, expiry, width)
+            row = single_expiry_condor_trade(prepared, spot, cfg, costs, expiry, width, prepared=True)
             if row is not None and getattr(cfg, "exclude_quality_warnings", False) and row.get("data_quality_flag") != "PASS":
                 row = None
             if row is not None:
