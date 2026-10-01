@@ -133,6 +133,26 @@ def main() -> None:
 
     pd.Series(summary).to_csv(out / "adaptive_walk_forward_oos_report.csv")
 
+    capture_summary = (
+        oos.groupby("target_rupees")["target_capture_pct"].agg(
+            trades="count",
+            median_capture_pct="median",
+            min_capture_pct="min",
+            max_capture_pct="max",
+        ).reset_index()
+        if not oos.empty
+        else pd.DataFrame(
+            columns=[
+                "target_rupees", "trades", "median_capture_pct",
+                "min_capture_pct", "max_capture_pct"
+            ]
+        )
+    )
+    capture_summary.to_csv(
+        out / "adaptive_target_capture_summary.csv",
+        index=False,
+    )
+
     by_target = []
     for target in targets:
         subset = oos[oos["target_rupees"].eq(float(target))] if not oos.empty else pd.DataFrame()
