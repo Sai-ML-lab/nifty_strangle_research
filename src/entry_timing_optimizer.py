@@ -410,6 +410,10 @@ def add_lot_metrics(
         return x
 
     qty = int(lots)
+    x["gross_pnl_points"] = (
+        x["initial_credit_points"].astype(float)
+        - x["exit_debit_points"].astype(float)
+    )
     historical_qty = qty * x["lot_size"].astype(int)
     current_qty = qty * int(reference_lot_size)
 
