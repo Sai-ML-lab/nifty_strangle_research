@@ -89,7 +89,7 @@ def test_nfo_holiday_calendar_marks_trading_holiday():
 
     class Fake(UpstoxPaperClient):
         def __init__(self):
-            pass
+            super().__init__("token")
 
         def market_holidays(self):
             return pd.DataFrame(
