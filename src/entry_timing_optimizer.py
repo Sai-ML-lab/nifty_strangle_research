@@ -28,6 +28,30 @@ DEFAULT_PROFIT_CAPTURES = (0.50, 0.75)
 DEFAULT_STOP_MULTIPLES = (2.0, 2.5)
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 
+POLICY_COLUMNS = [
+    "dte",
+    "sd",
+    "profit_capture",
+    "stop_multiple",
+    "excluded_weekdays",
+    "excluded_count",
+    "first_half_expectancy",
+    "second_half_expectancy",
+    "stable_train",
+    "trades",
+    "win_rate",
+    "expectancy",
+    "median_pnl",
+    "avg_win",
+    "avg_loss",
+    "profit_factor",
+    "max_drawdown",
+    "positive_trade_rate",
+    "median_win",
+    "target_band_rate_all",
+    "target_band_rate_wins",
+]
+
 
 def load_spot(path: Path) -> pd.DataFrame:
     raw = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
@@ -359,6 +383,20 @@ def build_candidate_trades(
         if idx % 25 == 0:
             print(f"processed {idx}/{len(files)} expiries; candidate trades={len(rows):,}")
 
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "dte", "sd", "profit_capture", "stop_multiple",
+                "entry_timestamp", "expiry", "entry_weekday",
+                "entry_spot", "forward_entry", "atm_iv", "rv20",
+                "iv_rv_spread", "put_strike", "call_strike",
+                "put_delta", "call_delta", "lot_size",
+                "initial_credit_points", "initial_credit_rupees",
+                "exit_timestamp", "exit_reason", "exit_debit_points",
+                "exit_intrinsic_points", "exit_intrinsic_gap_points",
+                "gross_pnl", "transaction_cost", "net_pnl",
+            ]
+        )
     out = pd.DataFrame(rows).sort_values(["entry_timestamp", "expiry", "dte", "sd", "profit_capture", "stop_multiple"])
     return out.reset_index(drop=True)
 
@@ -591,7 +629,9 @@ def evaluate_policies(
                 "stable_train": bool(stable_train),
                 **r,
             })
-    return pd.DataFrame(rows)
+    if not rows:
+        return pd.DataFrame(columns=POLICY_COLUMNS)
+    return pd.DataFrame(rows, columns=POLICY_COLUMNS)
 
 
 def walk_forward_select(
@@ -609,7 +649,16 @@ def walk_forward_select(
     require_target_band: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if trades.empty:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(
+            columns=[
+                "train_start", "train_end", "test_start", "test_end",
+                "selected_dte", "selected_sd", "selected_profit_capture",
+                "selected_stop_multiple", "excluded_weekdays", "train_trades",
+                "train_expectancy_5lot", "train_profit_factor",
+                "train_median_win_5lot", "train_target_band_rate_wins",
+                "test_trades",
+            ]
+        ), pd.DataFrame()
     x = trades.copy()
     x["entry_timestamp"] = pd.to_datetime(x["entry_timestamp"])
     start = pd.Timestamp(x["entry_timestamp"].min().year, x["entry_timestamp"].min().month, 1)
