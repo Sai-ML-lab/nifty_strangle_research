@@ -122,11 +122,11 @@ def test_ivrv_threshold_sweep_filters_by_entry_spread():
 def test_ivrv_walk_forward_selects_only_from_training_window():
     from src.ivrv import walk_forward_ivrv
 
-    dates = pd.date_range("2024-01-03", periods=30, freq="7D")
+    dates = pd.date_range("2024-01-03", periods=60, freq="7D")
     t = pd.DataFrame({
         "entry_timestamp": dates,
-        "iv_rv_spread": ([0.01] * 10) + ([0.03] * 10) + ([0.01] * 10),
-        "net_pnl": ([50.0] * 10) + ([100.0] * 10) + ([-10.0] * 10),
+        "iv_rv_spread": ([0.01] * 20) + ([0.03] * 20) + ([0.01] * 20),
+        "net_pnl": ([50.0] * 20) + ([100.0] * 20) + ([-10.0] * 20),
     })
     out = walk_forward_ivrv(
         t,
@@ -216,16 +216,13 @@ def test_portfolio_risk_metrics_include_weekly_risk():
 
 def test_sd_ivrv_walk_forward_selects_from_training_only():
     from src.sd_ivrv import walk_forward_sd_ivrv
-    dates = pd.to_datetime([
-        "2024-01-03", "2024-01-10", "2024-02-07", "2024-02-14",
-        "2024-07-03", "2024-07-10", "2024-08-07", "2024-08-14",
-    ])
+    dates = pd.date_range("2024-01-03", periods=40, freq="7D")
     a = pd.DataFrame({
         "entry_timestamp": dates, "iv_rv_spread": [0.01] * 8,
-        "net_pnl": [100.0, 120.0, 110.0, 90.0, -50.0, -50.0, -50.0, -50.0],
+        "net_pnl": [100.0] * 20 + [-50.0] * 20,
         "data_quality_flag": ["PASS"] * 8, "sd_multiple": [1.5] * 8,
     })
-    b = a.copy(); b["net_pnl"] = [-50.0, -50.0, -50.0, -50.0, 100.0, 120.0, 110.0, 90.0]; b["sd_multiple"] = 2.0
+    b = a.copy(); b["net_pnl"] = [-50.0] * 20 + [100.0] * 20; b["sd_multiple"] = 2.0
     out, selected, base = walk_forward_sd_ivrv(
         {1.5: a, 2.0: b}, thresholds=[None], train_months=6, test_months=3, rebalance_months=3, min_train_trades=1
     )
