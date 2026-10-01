@@ -147,3 +147,15 @@ def test_summarize_oos_counts_profitable_folds_not_nonempty_folds():
     out = summarize_oos(base)
     assert out["positive_test_folds"] == 1
     assert out["total_test_folds"] == 2
+
+
+def test_session_entry_date_uses_index_calendar_not_option_snapshot_gap():
+    x = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2026-06-15 10:00", "2026-06-16 10:00", "2026-06-17 10:00"]
+            )
+        }
+    )
+    expiry = pd.Timestamp("2026-06-17")
+    assert session_entry_date(x, expiry, 2) == pd.Timestamp("2026-06-15")
