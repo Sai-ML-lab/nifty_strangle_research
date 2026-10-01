@@ -382,7 +382,7 @@ def build_adaptive_target_trades(
             continue
 
         for offset in session_offsets:
-            entry_date = session_entry_date(x, expiry, int(offset))
+            entry_date = session_entry_date(spot, expiry, int(offset))
             if entry_date is None:
                 continue
             key = (int(offset), entry_date)
