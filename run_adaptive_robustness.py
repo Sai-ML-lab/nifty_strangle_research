@@ -148,10 +148,11 @@ def main() -> None:
     print("\nOOS by session offset:")
     print(by_offset.to_string(index=False) if not by_offset.empty else "No OOS trades.")
 
-    print("\nBuilding frozen DTE6/2SD/75%/2.5x control for paired dates...")
+    print("\nBuilding same-date/same-expiry frozen 2SD/75%/2.5x control for paired comparison...")
     control = build_frozen_control_trades(
         options_dir=Path(args.options_dir),
         spot=spot,
+        adaptive_oos=baseline_oos,
         base_cfg=cfg,
         costs=costs,
         reference_lot_size=args.reference_lot_size,
