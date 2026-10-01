@@ -240,7 +240,17 @@ def build_candidate_trades(
         x = normalize_options_vendor_file(raw)
         if getattr(x["timestamp"].dt, "tz", None) is not None:
             x["timestamp"] = x["timestamp"].dt.tz_localize(None)
-        x = x.merge(spot, on="timestamp", how="left", validate="many_to_one")
+        x = x.merge(spot, on="timestamp", how="left", suffixes=("", "_spot_ref"), validate="many_to_one")
+        # Some vendor Parquets already contain spot. Prefer the normalized spot reference,
+        # but preserve an existing non-null vendor spot when the reference is missing.
+        if "spot_spot_ref" in x.columns:
+            vendor_spot = pd.to_numeric(x["spot"], errors="coerce")
+            reference_spot = pd.to_numeric(x["spot_spot_ref"], errors="coerce")
+            x["spot"] = vendor_spot.where(vendor_spot.notna(), reference_spot)
+            x = x.drop(columns=["spot_spot_ref"])
+        if "spot" not in x.columns:
+            raise ValueError("No spot column available after option/spot merge")
+        x["spot"] = pd.to_numeric(x["spot"], errors="coerce")
         x["future"] = np.nan
         if "open" in x.columns:
             x["entry_price"] = pd.to_numeric(x["open"], errors="coerce")
