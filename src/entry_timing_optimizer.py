@@ -339,7 +339,13 @@ def _policy_keys() -> list[frozenset[str]]:
     return policies
 
 
-def add_5lot_metrics(trades: pd.DataFrame, costs: Costs, lots: int = 5) -> pd.DataFrame:
+def add_lot_metrics(
+    trades: pd.DataFrame,
+    costs: Costs,
+    lots: int = 5,
+    target_low: float = 6000.0,
+    target_high: float = 8000.0,
+) -> pd.DataFrame:
     x = trades.copy()
     if x.empty:
         return x
@@ -349,7 +355,17 @@ def add_5lot_metrics(trades: pd.DataFrame, costs: Costs, lots: int = 5) -> pd.Da
     sell = x["initial_credit_points"] * lot_qty
     buy = x["exit_debit_points"] * lot_qty
     x["net_pnl_5lot"] = [
-        float(gross - trade_cost(s, b, b, 4, costs, pd.Timestamp(ts)))
+        float(
+            gross
+            - trade_cost(
+                s + b,
+                s,
+                b,
+                4,
+                costs,
+                pd.Timestamp(ts),
+            )
+        )
         for gross, s, b, ts in zip(
             x["gross_pnl_points"] * lot_qty,
             sell,
@@ -357,8 +373,12 @@ def add_5lot_metrics(trades: pd.DataFrame, costs: Costs, lots: int = 5) -> pd.Da
             x["entry_timestamp"],
         )
     ]
-    x["profit_target_pnl_5lot"] = x["initial_credit_points"] * x["profit_capture"] * lot_qty
-    x["target_band_hit_5lot"] = x["net_pnl_5lot"].between(6000.0, 8000.0, inclusive="both")
+    x["profit_target_pnl_5lot"] = (
+        x["initial_credit_points"] * x["profit_capture"] * lot_qty
+    )
+    x["target_band_hit_5lot"] = x["net_pnl_5lot"].between(
+        float(target_low), float(target_high), inclusive="both"
+    )
     return x
 
 
@@ -387,7 +407,9 @@ def report(trades: pd.DataFrame) -> dict:
     p = trades["net_pnl_5lot"].astype(float)
     wins = p[p > 0]
     losses = p[p < 0]
-    equity = p.sort_index().cumsum()
+    ordered = trades.sort_values("entry_timestamp")
+    p_ordered = ordered["net_pnl_5lot"].astype(float)
+    equity = p_ordered.cumsum()
     dd = equity - equity.cummax()
     return {
         "trades": int(len(p)),
