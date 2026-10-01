@@ -103,3 +103,38 @@ def test_baseline_next_expiry_mapping_avoids_overlap():
 
     cfg = StrategyConfig(entry_mode="dte", target_dte=6)
     assert entry_date_for_expiry(pd.Timestamp("2023-01-19"), cfg) == pd.Timestamp("2023-01-13")
+
+
+def test_ivrv_threshold_sweep_filters_by_entry_spread():
+    from src.ivrv import threshold_sweep
+
+    t = pd.DataFrame({
+        "entry_timestamp": pd.date_range("2026-01-01", periods=4, freq="D"),
+        "iv_rv_spread": [0.005, 0.015, 0.025, 0.035],
+        "net_pnl": [10.0, 20.0, -5.0, 40.0],
+    })
+    out = threshold_sweep(t, thresholds=[0.0, 1.0, 2.0, 3.0], exclude_quality_warnings=True)
+    assert out.loc[out["min_iv_rv_spread_pct"] == 0.0, "trades"].iloc[0] == 4
+    assert out.loc[out["min_iv_rv_spread_pct"] == 2.0, "trades"].iloc[0] == 2
+    assert out.loc[out["min_iv_rv_spread_pct"] == 3.0, "trades"].iloc[0] == 1
+
+
+def test_ivrv_walk_forward_selects_only_from_training_window():
+    from src.ivrv import walk_forward_ivrv
+
+    dates = pd.date_range("2024-01-03", periods=30, freq="7D")
+    t = pd.DataFrame({
+        "entry_timestamp": dates,
+        "iv_rv_spread": ([0.01] * 10) + ([0.03] * 10) + ([0.01] * 10),
+        "net_pnl": ([50.0] * 10) + ([100.0] * 10) + ([-10.0] * 10),
+    })
+    out = walk_forward_ivrv(
+        t,
+        thresholds=[0.0, 1.0, 3.0],
+        train_months=6,
+        test_months=6,
+        rebalance_months=6,
+        min_train_trades=1,
+    )
+    assert not out.empty
+    assert "selected_min_iv_rv_spread_pct" in out.columns
