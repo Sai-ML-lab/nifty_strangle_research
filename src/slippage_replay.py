@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from dataclasses import replace
+
 from src.core import Costs, nifty_lot_size, option_value_at_expiry, trade_cost
 from src.data_ingest import normalize_options_vendor_file
 
@@ -50,7 +52,8 @@ def _normalise_chain(raw: pd.DataFrame) -> pd.DataFrame:
         x["timestamp"] = x["timestamp"].dt.tz_localize(None)
     return x
 
-def replay_trade(trade: pd.Series, chain: pd.DataFrame, slippage_points: float) -> dict:
+def replay_trade(trade: pd.Series, chain: pd.DataFrame, slippage_points: float, base_costs: Costs | None = None) -> dict:
+    base_costs = base_costs or Costs()
     expiry = pd.Timestamp(trade["expiry"]).normalize()
     entry_ts = pd.Timestamp(trade["entry_timestamp"])
     exit_ts = pd.Timestamp(trade["exit_timestamp"])
@@ -93,7 +96,8 @@ def replay_trade(trade: pd.Series, chain: pd.DataFrame, slippage_points: float) 
         "reference_net_pnl": _numeric(trade.get("net_pnl")), "data_quality_flag": str(trade.get("data_quality_flag", "PASS")),
     }
 
-def replay_slippage(trades: pd.DataFrame, options_dir: str | Path, slippages: list[float], exclude_quality_warnings: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+def replay_slippage(trades: pd.DataFrame, options_dir: str | Path, slippages: list[float], base_costs: Costs | None = None, exclude_quality_warnings: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+    base_costs = base_costs or Costs()
     required = {"entry_timestamp", "expiry", "exit_timestamp", "exit_reason", "put_strike", "call_strike"}
     missing = sorted(required - set(trades.columns))
     if missing:
@@ -120,7 +124,7 @@ def replay_slippage(trades: pd.DataFrame, options_dir: str | Path, slippages: li
         chain = chain[chain["timestamp"].isin(relevant_ts)].copy()
         for _, trade in group.iterrows():
             for slippage in slippages:
-                row = replay_trade(trade, chain, float(slippage))
+                row = replay_trade(trade, chain, float(slippage), base_costs=base_costs)
                 row["trade_index"] = trade.name
                 all_rows.append(row)
     detail = pd.DataFrame(all_rows)
