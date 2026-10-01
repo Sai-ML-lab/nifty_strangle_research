@@ -79,3 +79,24 @@ def test_parity_forward_falls_near_spot():
     x = pd.DataFrame(rows)
     est = estimate_forward_from_parity(x, 24000.0, 0.06, "entry_price")
     assert abs(est - fwd) < 2.0
+
+
+def test_baseline_next_expiry_mapping_avoids_overlap():
+    from run_batch_research import entry_timestamp_for_expiry
+    import run_batch_research as rb
+
+    cfg_weekday = 2  # Wednesday
+    dates = [pd.Timestamp("2023-01-19"), pd.Timestamp("2023-01-25")]
+    def entry_date_for(expiry):
+        offset = (expiry.weekday() - cfg_weekday) % 7
+        if offset == 0:
+            offset = 7
+        return (expiry - pd.Timedelta(days=offset)).normalize()
+
+    mapping = {}
+    for expiry in dates:
+        d = entry_date_for(expiry)
+        if d not in mapping:
+            mapping[d] = expiry
+
+    assert mapping[pd.Timestamp("2023-01-18")] == pd.Timestamp("2023-01-19")
