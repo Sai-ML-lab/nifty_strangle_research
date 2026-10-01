@@ -417,11 +417,13 @@ def run_paper_daemon(
                         costs=costs,
                     )
                     _save_atomic(ledger, ledger_path)
+                    closed = ledger[ledger["signal_id"].eq(str(open_trade["signal_id"]))]
+                    net_pnl = float(closed.iloc[-1]["net_pnl"])
                     msg = (
                         f"{FROZEN_STRATEGY_ID} PAPER EXIT "
                         f"reason={exit_reason} expiry={expiry.date()} "
                         f"debit={put_exit + call_exit:.2f} "
-                        f"net_pnl={float(ledger.iloc[-1]['net_pnl']):.2f}"
+                        f"net_pnl={net_pnl:.2f}"
                     )
                     print(msg)
                     _send_alert(msg)
