@@ -14,19 +14,24 @@ from src.core import (
     nifty_lot_size,
     pick_atm_iv,
     realized_vol,
+    sd_band,
     select_strikes,
     trade_cost,
 )
-from src.data_ingest import normalize_options_vendor_file, normalize_spot_file, read_any
+from src.data_ingest import normalize_options_vendor_file, normalize_spot_file
 
 
 FROZEN_STRATEGY_ID = "NIFTY_DTE6_2SD_PC75_STOP2_5_V1"
 FROZEN_SPEC = {
+    "risk_free_rate": 0.06,
     "entry_mode": "dte",
     "target_dte": 6,
     "entry_time": "10:00",
     "sd_multiple": 2.0,
     "strike_method": "pure_sd",
+    "atm_band": 3,
+    "minimum_oi": 0.0,
+    "minimum_volume": 0.0,
     "profit_capture": 0.75,
     "stop_multiple": 2.5,
     "time_exit_mode": "days_before_expiry",
@@ -43,11 +48,15 @@ FROZEN_SPEC_HASH = hashlib.sha256(
 
 def assert_frozen_config(cfg) -> None:
     actual = {
+        "risk_free_rate": float(cfg.risk_free_rate),
         "entry_mode": cfg.entry_mode,
         "target_dte": int(cfg.target_dte),
         "entry_time": cfg.entry_time,
         "sd_multiple": float(cfg.sd_multiple),
         "strike_method": cfg.strike_method,
+        "atm_band": int(cfg.atm_band),
+        "minimum_oi": float(cfg.minimum_oi),
+        "minimum_volume": float(cfg.minimum_volume),
         "profit_capture": float(cfg.profit_capture),
         "stop_multiple": float(cfg.stop_multiple),
         "time_exit_mode": cfg.time_exit_mode,
@@ -75,7 +84,9 @@ def _daily_rv20_available_at_open(spot: pd.DataFrame) -> pd.Series:
 
 
 def _planned_time_exit(expiry: pd.Timestamp, cfg) -> pd.Timestamp:
-    exit_date = (pd.Timestamp(expiry).normalize() - pd.Timedelta(days=int(cfg.time_exit_dte))).normalize()
+    exit_date = (
+        pd.Timestamp(expiry).normalize() - pd.Timedelta(days=int(cfg.time_exit_dte))
+    ).normalize()
     hh, mm = map(int, cfg.time_exit_time.split(":"))
     return exit_date + pd.Timedelta(hours=hh, minutes=mm)
 
@@ -108,10 +119,10 @@ def build_paper_signal(
     costs,
     slippage_points: float | None = None,
 ) -> pd.DataFrame:
-    """Create one frozen-strategy paper signal without looking at future option prices.
+    """Create one frozen-strategy paper signal from an as-of option snapshot.
 
-    The output contains planned entry/exit thresholds only. It never computes a realized
-    P&L or uses data after the supplied as_of timestamp.
+    The function only uses option-chain rows at the supplied timestamp. Spot history is
+    used only for the entry spot and pre-entry RV20. No future option prices are inspected.
     """
     assert_frozen_config(cfg)
     expiry = pd.Timestamp(expiry).normalize()
@@ -126,14 +137,21 @@ def build_paper_signal(
     opt = normalize_options_vendor_file(options.copy())
     if slippage_points is None:
         slippage_points = float(costs.slippage_points_per_leg)
+
     if "future" not in opt.columns:
         opt["future"] = np.nan
-    entry_col = "open" if "open" in opt.columns else "ltp"
+    for column in ["bid", "ask", "ltp", "open", "future", "iv", "volume", "oi"]:
+        if column not in opt.columns:
+            opt[column] = np.nan
+        opt[column] = pd.to_numeric(opt[column], errors="coerce")
+
+    entry_col = "open" if opt["open"].notna().any() else "ltp"
     opt["entry_price"] = pd.to_numeric(opt[entry_col], errors="coerce")
 
     spot = normalize_spot_file(spot_history.copy())
     opt = opt.merge(spot, on="timestamp", how="left", suffixes=("", "_spot"))
     if "spot_spot" in opt.columns:
+        opt["spot"] = pd.to_numeric(opt["spot"], errors="coerce")
         opt["spot"] = opt["spot"].where(opt["spot"].notna(), opt["spot_spot"])
         opt = opt.drop(columns=["spot_spot"])
     opt = add_executable_prices(opt, slippage_points=float(slippage_points))
@@ -145,8 +163,8 @@ def build_paper_signal(
         return pd.DataFrame([row])
 
     spot0 = float(chain["spot"].iloc[0])
-    future0 = pd.to_numeric(chain["future"], errors="coerce")
-    future = float(future0.dropna().iloc[0]) if not future0.dropna().empty and future0.dropna().iloc[0] > 0 else np.nan
+    future0 = pd.to_numeric(chain["future"], errors="coerce").dropna()
+    future = float(future0.iloc[0]) if len(future0) and future0.iloc[0] > 0 else np.nan
     forward = future if np.isfinite(future) else estimate_forward_from_parity(
         chain, spot0, cfg.risk_free_rate, price_column="entry_price"
     )
@@ -157,11 +175,7 @@ def build_paper_signal(
             chain, cfg.risk_free_rate, allow_iv_calc=True, price_column="entry_price"
         )
         atm_iv = pick_atm_iv(chain, forward, cfg.atm_band)
-        lower = forward - forward * atm_iv * np.sqrt(
-            max((pd.Timestamp(expiry) + pd.Timedelta(hours=15, minutes=30) - as_of).total_seconds(), 1.0)
-            / (365.0 * 24 * 3600)
-        ) * cfg.sd_multiple
-        upper = forward + (forward - lower)
+        lower, upper, _ = sd_band(forward, atm_iv, expiry, as_of, cfg.sd_multiple)
         rv20 = _daily_rv20_available_at_open(spot).get(as_of.normalize(), np.nan)
         put, call = select_strikes(chain, forward, atm_iv, expiry, as_of, cfg)
     except Exception as exc:
@@ -262,13 +276,19 @@ def record_entry_fill(
 ) -> pd.DataFrame:
     x = ledger.copy()
     _check_signal_id(x, signal_id)
-    idx = x.index[x["strategy_spec_hash"].eq(FROZEN_SPEC_HASH) & x["signal_status"].eq("READY") & x["strategy_id"].eq(FROZEN_STRATEGY_ID)]
+    idx = x.index[
+        x["strategy_spec_hash"].eq(FROZEN_SPEC_HASH)
+        & x["signal_status"].eq("READY")
+        & x["strategy_id"].eq(FROZEN_STRATEGY_ID)
+    ]
     idx = idx[x.loc[idx, "signal_id"].eq(signal_id)] if "signal_id" in x.columns else idx
     if len(idx) != 1:
         raise ValueError(f"Expected one READY signal with signal_id={signal_id}, found {len(idx)}")
     i = idx[0]
     if x.at[i, "ledger_status"] not in {"SIGNAL", "OPEN"}:
-        raise ValueError(f"Signal {signal_id} is not open for entry; status={x.at[i, 'ledger_status']}")
+        raise ValueError(
+            f"Signal {signal_id} is not open for entry; status={x.at[i, 'ledger_status']}"
+        )
 
     put_fill = float(put_fill)
     call_fill = float(call_fill)
@@ -279,14 +299,12 @@ def record_entry_fill(
     x.at[i, "actual_put_entry_fill"] = put_fill
     x.at[i, "actual_call_entry_fill"] = call_fill
     x.at[i, "actual_entry_credit_points"] = put_fill + call_fill
-    x.at[i, "actual_entry_credit_rupees"] = (put_fill + call_fill) * int(x.at[i, "lot_size"])
+    x.at[i, "actual_entry_credit_rupees"] = (
+        put_fill + call_fill
+    ) * int(x.at[i, "lot_size"])
     x.at[i, "actual_entry_slippage_vs_bid_points_per_leg"] = (
-        (
-            float(x.at[i, "put_bid"]) - put_fill
-        )
-        + (
-            float(x.at[i, "call_bid"]) - call_fill
-        )
+        (float(x.at[i, "put_bid"]) - put_fill)
+        + (float(x.at[i, "call_bid"]) - call_fill)
     ) / 2.0
     x.at[i, "ledger_status"] = "OPEN"
     return x
