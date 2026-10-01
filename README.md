@@ -352,3 +352,20 @@ python tools_independent_validation.py \\
 ```
 
 Do not use holdout performance from the previously inspected archive as independent confirmation. The secondary-source comparison is specifically intended to detect vendor-dependent prices, missing quotes and settlement inconsistencies.
+
+
+### Secondary source build: Rissin
+
+The Rissin Hugging Face dataset is a secondary option-price source with NIFTY/intraday fields that can be normalized into the research format. The repository includes `tools/build_rissin_long.py` to filter NIFTY minute rows and emit per-expiry Parquets compatible with the frozen backtester.
+
+Dataset: https://huggingface.co/datasets/rissin/nse-options-intraday
+
+```bash
+python tools/build_rissin_long.py \
+  --source <rissin-options-file.parquet> \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --out data/rissin/processed \
+  --start-date 2024-10-01
+```
+
+For the first cross-source test, keep the same frozen DTE6 + 2-SD + 75% capture / 2.5x stop strategy and compare the resulting ledger with `tools_independent_validation.py`.
