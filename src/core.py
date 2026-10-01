@@ -52,7 +52,9 @@ class StrategyConfig:
     risk_free_rate: float = 0.06
     calendar_days_per_year: int = 365
     trading_days_per_year: int = 252
+    entry_mode: str = "weekday"       # weekday | dte
     entry_weekday: int = 2
+    target_dte: int = 6
     entry_time: str = "10:00"
     sd_multiple: float = 2.0
     target_delta: float = 0.05
