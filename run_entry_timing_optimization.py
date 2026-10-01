@@ -208,20 +208,17 @@ def main() -> None:
             )
     pd.DataFrame(rows).to_csv(out / "target_credit_requirements.csv", index=False)
 
-    print("
-Stage A timing policy snapshot:")
+    print("\nStage A timing policy snapshot:")
     if timing_policies.empty:
         print("No timing policies met the minimum trade count.")
     else:
         print(timing_policies.head(12).to_string(index=False))
 
-    print("
-Walk-forward selections:")
+    print("\nWalk-forward selections:")
     print(selected.to_string(index=False) if not selected.empty else "No qualifying walk-forward selections.")
 
     if not oos.empty:
-        print("
-Walk-forward OOS report:")
+        print("\nWalk-forward OOS report:")
         print(pd.Series(oos_report).to_string())
 
 
