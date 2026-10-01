@@ -95,7 +95,13 @@ def main() -> None:
     ap.add_argument(
         "--require-targetable-band",
         action="store_true",
-        help="Keep only entries whose ex-ante current-size target P&L is within the requested rupee band.",
+        help="Legacy strict target-band filter applied to training and OOS.",
+    )
+    ap.add_argument(
+        "--target-gate",
+        choices=("none", "floor", "band"),
+        default="none",
+        help="Deployment-style gate for selected OOS trades: none, >= target-low (floor), or target-low..target-high (band).",
     )
     ap.add_argument("--min-train-trades", type=int, default=25)
     ap.add_argument("--min-full-sample-trades", type=int, default=40)
@@ -196,6 +202,7 @@ def main() -> None:
         pnl_column="net_pnl_5lot_current",
         target_column="target_band_hit_5lot_current",
         require_target_band=args.require_targetable_band,
+        target_gate_mode=("band" if args.require_targetable_band else args.target_gate),
     )
     selected.to_csv(out / "walk_forward_selection.csv", index=False)
     oos.to_csv(out / "walk_forward_oos_trades.csv", index=False)
@@ -206,12 +213,13 @@ def main() -> None:
             pnl_column="net_pnl_5lot_current",
             target_column="target_band_hit_5lot_current",
         )
-        oos_report["positive_test_folds"] = (
-            selected.get("test_trades", pd.Series(dtype=float))
-            .gt(0).sum()
-            if not selected.empty
-            else 0
-        )
+        if not selected.empty and not oos.empty:
+            fold_pnl = oos.groupby("wf_test_start")["net_pnl_5lot_current"].sum()
+            oos_report["positive_test_folds"] = int((fold_pnl > 0).sum())
+            oos_report["total_test_folds"] = int(len(fold_pnl))
+        else:
+            oos_report["positive_test_folds"] = 0
+            oos_report["total_test_folds"] = 0
         oos_report["oos_start"] = str(oos["entry_timestamp"].min().date())
         oos_report["oos_end"] = str(oos["entry_timestamp"].max().date())
         pd.Series(oos_report).to_csv(out / "walk_forward_oos_report.csv")
