@@ -52,6 +52,12 @@ def load_config(path: str | Path) -> tuple[StrategyConfig, Costs, dict]:
         lots=raw["backtest"].get("lots", 1),
         min_entry_credit_points=raw["backtest"].get("min_entry_credit_points", 1.0),
         starting_capital=raw["backtest"].get("starting_capital", 1_000_000),
+        min_iv_rv_spread=(
+            raw["filters"].get("min_iv_rv_spread")
+            if raw.get("filters", {}).get("enabled", False)
+            else None
+        ),
+        exclude_quality_warnings=raw.get("data_quality", {}).get("exclude_warnings", False),
     )
     c = raw.get("costs", {})
     costs = Costs(**{k: c[k] for k in asdict(Costs()) if k in c})
@@ -141,6 +147,10 @@ def run_backtest(x: pd.DataFrame, cfg: StrategyConfig, costs: Costs) -> pd.DataF
         try:
             entry_chain = ensure_iv_delta(entry_chain, cfg.risk_free_rate, allow_iv_calc=True, price_column="entry_price")
             atm_iv = pick_atm_iv(entry_chain, forward, cfg.atm_band)
+            rv20_value = float(entry_chain["rv20"].iloc[0]) if "rv20" in entry_chain.columns and pd.notna(entry_chain["rv20"].iloc[0]) else np.nan
+            if cfg.min_iv_rv_spread is not None:
+                if not np.isfinite(rv20_value) or (atm_iv - rv20_value) < float(cfg.min_iv_rv_spread) / 100.0:
+                    continue
             put, call = select_strikes(entry_chain, forward, atm_iv, expiry, pd.Timestamp(entry_ts), cfg)
         except Exception:
             continue
@@ -224,8 +234,8 @@ def run_backtest(x: pd.DataFrame, cfg: StrategyConfig, costs: Costs) -> pd.DataF
             "exit_spot": spot_at_exit,
             "forward_entry": forward,
             "atm_iv": atm_iv,
-            "rv20": float(entry_chain["rv20"].iloc[0]) if pd.notna(entry_chain["rv20"].iloc[0]) else np.nan,
-            "iv_rv_spread": atm_iv - float(entry_chain["rv20"].iloc[0]) if pd.notna(entry_chain["rv20"].iloc[0]) else np.nan,
+            "rv20": rv20_value,
+            "iv_rv_spread": (atm_iv - rv20_value) if np.isfinite(rv20_value) else np.nan,
             "put_strike": put_k,
             "call_strike": call_k,
             "put_delta": float(put["delta"]),
