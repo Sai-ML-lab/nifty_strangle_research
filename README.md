@@ -241,3 +241,20 @@ The key outputs are:
 - slippage level at which the edge disappears
 
 Only after those checks should we proceed to SD/delta/exit optimization and the iron-condor comparison.
+
+
+## Experiment 7: stability-constrained exit matrix
+
+After the entry experiments, exit mechanics are tested while holding the DTE6 and 2-SD entry rule fixed. The first matrix varies profit capture = 25%, 50%, 75% and stop multiple = 1.5x, 2.0x, 2.5x; the 1-DTE time exit remains fixed. Training selection requires non-negative expectancy in both calendar halves, so an unstable exit rule can result in NO TRADE.
+
+Run:
+
+```bash
+python run_exit_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6.yaml \
+  --out-dir results/exit_matrix
+```
+
+Outputs include the full matrix, the walk-forward-selected exit sequence, the selected OOS trade ledger, the fixed 50%-capture/2x-stop control ledger, and portfolio-level risk metrics.
