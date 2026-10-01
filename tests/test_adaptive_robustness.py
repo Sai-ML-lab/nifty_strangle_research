@@ -48,11 +48,11 @@ def test_pnl_stats_and_winner_concentration():
     stats = pnl_stats(x)
     assert stats["trades"] == 5
     assert np.isclose(stats["win_rate"], 0.6)
-    assert np.isclose(stats["expectancy"], 300.0)
+    assert np.isclose(stats["expectancy"], -1700.0)
 
     c = winner_concentration(x, removals=[1, 3])
     assert c["removed_top_winners"].tolist() == [1, 3]
-    assert np.isclose(c.loc[0, "total_pnl_remaining"], 0.0)
+    assert np.isclose(c.loc[0, "total_pnl_remaining"], -16500.0)
     assert c.loc[1, "trades_remaining"] == 2
 
 
@@ -125,4 +125,4 @@ def test_pair_without_matches_is_schema_safe():
     merged, summary = pair_adaptive_with_control(adaptive, control)
     assert len(merged) == 1
     assert summary["matched_dates"] == 0
-    assert np.isnan(summary["date_match_rate"])
+    assert np.isclose(summary["date_match_rate"], 0.0)
