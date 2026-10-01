@@ -492,3 +492,76 @@ The research question is now:
 > Does the frozen historical edge survive unchanged when future signals and fills are recorded prospectively?
 
 Only after enough prospective observations should we reconsider the model itself.
+
+
+### 11D. Automated Upstox paper engine
+
+The repository also includes an always-on paper-trading daemon backed by Upstox market data. It is deliberately **paper-only**: it never calls any order-placement API.
+
+Upstox currently documents an Analytics Token with one-year validity and read-only access to Market Quote, Historical Data, Option Chain and WebSocket APIs, so it is the recommended credential for this workflow rather than a daily OAuth token. citeturn603084search0turn603084search8
+
+The daemon uses the Upstox Option Chain endpoint for the frozen entry and held-leg quotes. The endpoint exposes underlying spot, bid/ask, volume, OI, IV and delta for each strike. citeturn574693view0
+
+Create a local secrets file from the example:
+
+```bash
+cp .env.paper.example .env.paper
+```
+
+Put the Analytics Token only in that local file:
+
+```text
+UPSTOX_ANALYTICS_TOKEN=<your token>
+```
+
+Do not commit the real token.
+
+Run one polling cycle first:
+
+```bash
+python run_upstox_paper.py --once
+```
+
+Run continuously during market hours:
+
+```bash
+python run_upstox_paper.py --poll-seconds 30
+```
+
+The daemon automatically:
+
+1. Detects the weekly expiry exactly 6 calendar days ahead.
+2. Creates the frozen 10:00 signal.
+3. Opens a paper position using bid minus the frozen slippage assumption.
+4. Polls the held legs using executable ask plus slippage.
+5. Closes at the frozen 75% target, 2.5x stop, 1-DTE 15:00 time exit, or expiry fallback.
+6. Persists the paper ledger and a quote-by-quote monitoring log.
+7. Optionally sends a webhook alert via `PAPER_ALERT_WEBHOOK_URL`.
+
+Outputs:
+
+```text
+results/paper/
+├── upstox_paper_ledger.csv
+└── upstox_quote_log.csv
+```
+
+For macOS, install it as a LaunchAgent so it starts automatically when you log in and restarts if the process exits:
+
+```bash
+python tools/install_mac_launchd.py \
+  --repo /absolute/path/to/nifty_strangle_research \
+  --python /absolute/path/to/nifty_strangle_research/.venv/bin/python \
+  --config config_dte6_frozen_75_25.yaml \
+  --env-file .env.paper
+```
+
+The macOS LaunchAgent stores logs under:
+
+```text
+results/paper/logs/
+├── paper.log
+└── paper.error.log
+```
+
+This automation is intentionally separate from any live-trading integration. If an Upstox MCP connection is later available, it can be used for read-only account/order reconciliation; the paper engine still uses Upstox market-data APIs so the signal is deterministic and auditable.
