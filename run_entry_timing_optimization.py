@@ -143,7 +143,7 @@ def main() -> None:
         "Candidate table built: "
         f"{len(candidates):,} rows; "
         f"current-size targetable rows="
-        f"{int(candidates["target_band_hit_5lot_current"].sum()):,}"
+        f"{int(candidates['target_band_hit_5lot_current'].sum()):,}"
     )
     candidates.to_csv(out / "candidate_trades.csv", index=False)
 
@@ -155,9 +155,9 @@ def main() -> None:
 
     # Stage A: timing diagnostics with the currently frozen 2-SD / 75% / 2.5x mechanics.
     timing = analysis_candidates[
-        candidates["sd"].eq(2.0)
-        & candidates["profit_capture"].eq(0.75)
-        & candidates["stop_multiple"].eq(2.5)
+        analysis_candidates["sd"].eq(2.0)
+        & analysis_candidates["profit_capture"].eq(0.75)
+        & analysis_candidates["stop_multiple"].eq(2.5)
     ].copy()
     timing_policies = evaluate_policies(
         timing,
