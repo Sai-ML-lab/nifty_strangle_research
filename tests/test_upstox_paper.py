@@ -84,6 +84,70 @@ def test_find_dte6_expiry_rejects_non_weekly_target():
     assert got is None
 
 
+def test_nfo_holiday_calendar_marks_trading_holiday():
+    from src.upstox_paper import UpstoxPaperClient
+
+    class Fake(UpstoxPaperClient):
+        def __init__(self):
+            pass
+
+        def market_holidays(self):
+            return pd.DataFrame(
+                [
+                    {
+                        "date": "2026-10-02",
+                        "holiday_type": "TRADING_HOLIDAY",
+                        "closed_exchanges": ["NFO", "NSE"],
+                    },
+                    {
+                        "date": "2026-10-03",
+                        "holiday_type": "SETTLEMENT_HOLIDAY",
+                        "closed_exchanges": ["NFO", "NSE"],
+                    },
+                ]
+            )
+
+    c = Fake()
+    now = pd.Timestamp("2026-10-01 15:00", tz="Asia/Kolkata").to_pydatetime()
+    holidays = c.nfo_trading_holiday_dates(now)
+    assert holidays == {pd.Timestamp("2026-10-02")}
+    assert c.is_nfo_trading_day(now) is True
+    assert (
+        c.is_nfo_trading_day(
+            pd.Timestamp("2026-10-02 10:00", tz="Asia/Kolkata").to_pydatetime()
+        )
+        is False
+    )
+
+
+def test_nfo_calendar_uses_cached_data_for_short_interval():
+    from src.upstox_paper import UpstoxPaperClient
+
+    class Fake(UpstoxPaperClient):
+        def __init__(self):
+            super().__init__("token")
+            self.calls = 0
+
+        def market_holidays(self):
+            self.calls += 1
+            return pd.DataFrame(
+                [
+                    {
+                        "date": "2026-10-02",
+                        "holiday_type": "TRADING_HOLIDAY",
+                        "closed_exchanges": ["NFO"],
+                    }
+                ]
+            )
+
+    c = Fake()
+    t1 = pd.Timestamp("2026-10-01 09:00", tz="Asia/Kolkata").to_pydatetime()
+    t2 = pd.Timestamp("2026-10-01 09:30", tz="Asia/Kolkata").to_pydatetime()
+    assert c.is_nfo_trading_day(t1) is True
+    assert c.is_nfo_trading_day(t2) is True
+    assert c.calls == 1
+
+
 def test_launchd_plist_contains_keepalive_and_unbuffered_python():
     from pathlib import Path
     from tools.install_mac_launchd import build_plist
