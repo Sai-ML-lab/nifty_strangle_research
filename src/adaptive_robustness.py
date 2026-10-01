@@ -17,7 +17,7 @@ from src.core import (
     select_strikes,
 )
 from src.data_ingest import normalize_options_vendor_file
-from src.entry_timing_optimizer import _exit_trade, _merge_spot_reference, add_lot_metrics
+from src.entry_timing_optimizer import _entry_credit, _exit_trade, _merge_spot_reference, add_lot_metrics
 
 
 ROBUSTNESS_PNL = "net_pnl_current"
