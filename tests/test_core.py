@@ -258,3 +258,25 @@ def test_stable_selector_allows_consistent_training_candidate():
     eligible, score = _candidate_score(t, 0.0, min_train_trades=10, min_subperiod_trades=5)
     assert eligible is True
     assert score["expectancy"] == 100.0
+
+def test_exit_matrix_stability_rejects_inconsistent_training():
+    from src.exit_matrix import _stable_candidate_stats
+    t = pd.DataFrame({
+        "entry_timestamp": pd.date_range("2024-01-01", periods=20, freq="15D"),
+        "net_pnl": [100.0] * 10 + [-100.0] * 10,
+    })
+    eligible, score = _stable_candidate_stats(t, min_train_trades=10, min_subperiod_trades=5)
+    assert eligible is False
+    assert score["first_half_expectancy"] > 0
+    assert score["second_half_expectancy"] < 0
+
+
+def test_exit_matrix_stability_accepts_consistent_training():
+    from src.exit_matrix import _stable_candidate_stats
+    t = pd.DataFrame({
+        "entry_timestamp": pd.date_range("2024-01-01", periods=20, freq="15D"),
+        "net_pnl": [100.0] * 20,
+    })
+    eligible, score = _stable_candidate_stats(t, min_train_trades=10, min_subperiod_trades=5)
+    assert eligible is True
+    assert score["expectancy"] == 100.0
