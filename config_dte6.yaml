@@ -22,7 +22,8 @@ strike_selection:
 exit:
   profit_capture: 0.50
   stop_multiple: 2.0
-  time_exit_weekday: 0
+  time_exit_mode: days_before_expiry
+  time_exit_dte: 1
   time_exit_time: "15:00"
   settle_at_expiry: true
 
