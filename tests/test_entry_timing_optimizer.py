@@ -97,3 +97,62 @@ def test_entry_optimizer_current_size_target_band_ignores_historical_lot_size():
         reference_lot_size=65,
     )
     assert bool(out.loc[0, "target_band_hit_5lot_current"]) is True
+
+
+def test_entry_optimizer_empty_policy_result_is_schema_safe():
+    from src.entry_timing_optimizer import evaluate_policies, POLICY_COLUMNS
+
+    x = pd.DataFrame(
+        {
+            "dte": [6],
+            "sd": [2.0],
+            "profit_capture": [0.75],
+            "stop_multiple": [2.5],
+            "entry_timestamp": pd.to_datetime(["2026-10-01 10:00"]),
+            "entry_weekday": ["Thursday"],
+            "net_pnl_5lot_current": [7000.0],
+            "target_band_hit_5lot_current": [True],
+        }
+    )
+    out = evaluate_policies(
+        x,
+        min_trades=40,
+        pnl_column="net_pnl_5lot_current",
+        target_column="target_band_hit_5lot_current",
+    )
+    assert out.empty
+    assert list(out.columns) == POLICY_COLUMNS
+
+
+def test_entry_optimizer_targetable_rows_are_not_double_counted_in_explanation_columns():
+    from src.core import Costs
+    from src.entry_timing_optimizer import add_lot_metrics
+
+    trades = pd.DataFrame(
+        [
+            {
+                "initial_credit_points": 30.0,
+                "exit_debit_points": 7.5,
+                "profit_capture": 0.75,
+                "lot_size": 25,
+                "entry_timestamp": pd.Timestamp("2024-10-07 10:00"),
+            },
+            {
+                "initial_credit_points": 20.0,
+                "exit_debit_points": 5.0,
+                "profit_capture": 0.75,
+                "lot_size": 25,
+                "entry_timestamp": pd.Timestamp("2024-10-08 10:00"),
+            },
+        ]
+    )
+    out = add_lot_metrics(
+        trades,
+        Costs(slippage_points_per_leg=0.50),
+        lots=5,
+        reference_lot_size=65,
+        target_low=6000,
+        target_high=8000,
+    )
+    assert "target_band_hit_5lot_current" in out.columns
+    assert out["target_band_hit_5lot_current"].dtype == bool
