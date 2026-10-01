@@ -170,6 +170,27 @@ The gate uses the same 12-month train / 3-month test / 3-month rebalance structu
 
 Experiment 4 separates two questions. Slippage sensitivity holds the realized trade decisions fixed and replays execution under different assumptions. Regime gating selects the IV-RV threshold in the training window and activates trading only when that training-selected rule clears a pre-declared profitability gate. These diagnostics are not full-sample parameter optimizers.
 
+
+## Experiment 5: SD × IV-RV walk-forward + portfolio risk
+
+The next research stage jointly selects the implied-volatility SD distance and IV-RV entry threshold using only the preceding training window. The default grid is SD = 1.50, 1.75, 2.00, 2.50, 3.00 and IV-RV threshold = no filter, 0, 1, 2 vol points. The test window is untouched until selection is complete.
+
+Run:
+
+```bash
+python run_sd_ivrv_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6.yaml \
+  --out-dir results/sd_ivrv
+```
+
+The runner builds each SD ledger in one expiry-by-expiry pass, then performs the walk-forward selection. Outputs include per-SD trade ledgers, sd_ivrv_walk_forward.csv, selected_oos_trades.csv, baseline_oos_trades.csv, and oos_risk_report.csv.
+
+The portfolio report includes total return, CAGR, max drawdown, weekly Sharpe/Sortino, worst week, weekly 5% CVaR, profit factor and losing streak. Weekly risk statistics include zero-trade weeks so a regime filter cannot look better merely by omitting inactive weeks from volatility calculations.
+
+Do not choose the final SD/IV-RV pair from full-sample results. Use the walk-forward-selected sequence and then validate the selected OOS ledger under frozen-decision slippage replay.
+
 ## Data-quality handling
 
 The batch runner records `data_quality_flag` and `exit_intrinsic_gap_points`. An early-exit quote is flagged when its combined buy debit is more than 1 point below the intrinsic value implied by the recorded NIFTY spot.
