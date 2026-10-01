@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -197,9 +198,17 @@ def main() -> None:
     ap.add_argument("--spot", required=True, help="NIFTY spot parquet/csv")
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--out-dir", default="results/real")
+    ap.add_argument(
+        "--slippage",
+        type=float,
+        default=None,
+        help="Override per-leg slippage in option points without changing config.yaml",
+    )
     args = ap.parse_args()
 
     cfg, costs, _ = load_config(args.config)
+    if args.slippage is not None:
+        costs = replace(costs, slippage_points_per_leg=float(args.slippage))
     spot = load_spot(Path(args.spot))
     files = sorted(Path(args.options_dir).rglob("*.parquet"))
     # The baseline must hold only the NEXT available expiry for a given entry date.
