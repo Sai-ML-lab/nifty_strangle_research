@@ -96,6 +96,10 @@ Do not interpret synthetic smoke-test P&L as a market result.
 - `src/walk_forward.py` — walk-forward framework
 - `tools/download_trademarkk.py` — free data downloader
 - `tools/build_trademarkk_long.py` — per-expiry normalizer
+- `src/slippage_replay.py` — frozen-decision execution replay
+- `src/regime_gate.py` — train-only IV-RV regime gating
+- `run_slippage_sensitivity.py` — frozen slippage sensitivity runner
+- `run_regime_gate.py` — IV-RV regime gate runner
 - `tests/` — automated tests
 ## Baseline audit note
 
@@ -140,17 +144,30 @@ python run_batch_research.py \
   --out-dir results/trademarkk_dte6_ivrv2
 ```
 
-Run exact slippage sensitivity on the same fixed rule:
+Replay slippage on a **frozen trade ledger**:
 
 ```bash
 python run_slippage_sensitivity.py \
+  --trades results/trademarkk_dte6_ivrv2/baseline_trades.csv \
   --options-dir data/trademarkk/processed \
-  --spot data/trademarkk/index/NIFTY.parquet \
-  --config config_dte6_ivrv2.yaml \
-  --out-dir results/slippage_sensitivity
+  --out-dir results/slippage_replay
 ```
 
-The sensitivity runner defaults to 0, 0.10, 0.25, 0.50, 0.75 and 1.00 option points per leg. It reruns the actual backtest rather than simply subtracting a linear slippage estimate.
+The replay keeps each trade's entry date, strikes, exit timestamp and exit reason fixed. Only execution prices and resulting transaction costs change across 0, 0.10, 0.25, 0.50, 0.75 and 1.00 option points per leg. This isolates execution sensitivity; it does not re-run target/stop decisions at each slippage level.
+
+For the train-only IV-RV regime gate:
+
+```bash
+python run_regime_gate.py \
+  --trades results/trademarkk_dte6_v2/baseline_trades.csv \
+  --out-dir results/ivrv_regime_gate
+```
+
+The gate uses the same 12-month train / 3-month test / 3-month rebalance structure as the IV-RV walk-forward. A fold is enabled only when the training-selected threshold has at least the minimum number of trades, training expectancy at or above 0, and training profit factor at or above 1.0. No test-period information is used to activate the regime.
+
+## Experiment 4: frozen execution sensitivity and regime gating
+
+Experiment 4 separates two questions. Slippage sensitivity holds the realized trade decisions fixed and replays execution under different assumptions. Regime gating selects the IV-RV threshold in the training window and activates trading only when that training-selected rule clears a pre-declared profitability gate. These diagnostics are not full-sample parameter optimizers.
 
 ## Data-quality handling
 
