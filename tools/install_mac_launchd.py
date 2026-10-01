@@ -21,6 +21,7 @@ def build_plist(
         "Label": label,
         "ProgramArguments": [
             python_executable,
+            "-u",
             str(repo / "run_upstox_paper.py"),
             "--config",
             config,
@@ -62,7 +63,6 @@ def main() -> None:
     with plist_path.open("wb") as fh:
         plistlib.dump(plist, fh, sort_keys=False)
 
-    uid = getpass.getuser()
     domain = f"gui/{subprocess.check_output(['id', '-u'], text=True).strip()}"
     subprocess.run(
         ["launchctl", "bootout", domain, str(plist_path)],
