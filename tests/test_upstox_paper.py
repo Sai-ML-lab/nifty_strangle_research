@@ -41,7 +41,33 @@ def test_upstox_chain_to_dataframe_converts_iv_percent():
     assert float(x.loc[x["option_type"].eq("PE"), "iv"].iloc[0]) == 0.22
 
 
-def test_find_dte6_expiry():
+def test_find_dte6_expiry_queries_exact_target_date():
+    from src.upstox_paper import UpstoxPaperClient
+
+    class Fake(UpstoxPaperClient):
+        def __init__(self):
+            self.calls = []
+
+        def option_contracts(self, expiry_ref):
+            self.calls.append(expiry_ref)
+            if expiry_ref == "2026-10-15":
+                return pd.DataFrame(
+                    [
+                        {"expiry": "2026-10-15", "weekly": True},
+                        {"expiry": "2026-10-15", "weekly": True},
+                    ]
+                )
+            return pd.DataFrame()
+
+    c = Fake()
+    got = c.find_dte6_expiry(
+        pd.Timestamp("2026-10-09 10:00", tz="Asia/Kolkata").to_pydatetime()
+    )
+    assert got == pd.Timestamp("2026-10-15")
+    assert c.calls == ["2026-10-15"]
+
+
+def test_find_dte6_expiry_rejects_non_weekly_target():
     from src.upstox_paper import UpstoxPaperClient
 
     class Fake(UpstoxPaperClient):
@@ -49,20 +75,16 @@ def test_find_dte6_expiry():
             pass
 
         def option_contracts(self, expiry_ref):
-            if expiry_ref == "current_week":
-                return pd.DataFrame(
-                    [{"expiry": "2026-10-08", "weekly": True}]
-                )
-            return pd.DataFrame(
-                [{"expiry": "2026-10-15", "weekly": True}]
-            )
+            return pd.DataFrame([{"expiry": expiry_ref, "weekly": False}])
 
     c = Fake()
-    got = c.find_dte6_expiry(pd.Timestamp("2026-10-09 10:00", tz="Asia/Kolkata").to_pydatetime())
-    assert got == pd.Timestamp("2026-10-15")
+    got = c.find_dte6_expiry(
+        pd.Timestamp("2026-10-09 10:00", tz="Asia/Kolkata").to_pydatetime()
+    )
+    assert got is None
 
 
-def test_launchd_plist_contains_keepalive():
+def test_launchd_plist_contains_keepalive_and_unbuffered_python():
     from pathlib import Path
     from tools.install_mac_launchd import build_plist
 
@@ -76,4 +98,5 @@ def test_launchd_plist_contains_keepalive():
     )
     assert p["KeepAlive"] is True
     assert p["RunAtLoad"] is True
-    assert p["ProgramArguments"][1].endswith("run_upstox_paper.py")
+    assert p["ProgramArguments"][1] == "-u"
+    assert p["ProgramArguments"][2].endswith("run_upstox_paper.py")
