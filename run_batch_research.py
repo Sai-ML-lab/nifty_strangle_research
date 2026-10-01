@@ -34,14 +34,30 @@ def expiry_from_filename(path: Path) -> pd.Timestamp | None:
         return None
 
 
-def entry_timestamp_for_expiry(x: pd.DataFrame, expiry: pd.Timestamp, weekday: int, hhmm: str) -> pd.Timestamp | None:
-    hh, mm = map(int, hhmm.split(":"))
-    # Last configured weekday strictly before expiry.
-    offset = (expiry.weekday() - weekday) % 7
+def entry_date_for_expiry(expiry: pd.Timestamp, cfg) -> pd.Timestamp:
+    mode = getattr(cfg, "entry_mode", "weekday")
+    if mode == "dte":
+        return (expiry - pd.Timedelta(days=int(cfg.target_dte))).normalize()
+    offset = (expiry.weekday() - cfg.entry_weekday) % 7
     if offset == 0:
         offset = 7
-    entry_date = expiry - pd.Timedelta(days=offset)
-    m = (x["timestamp"].dt.date == entry_date.date()) & ((x["timestamp"].dt.hour > hh) | ((x["timestamp"].dt.hour == hh) & (x["timestamp"].dt.minute >= mm)))
+    return (expiry - pd.Timedelta(days=offset)).normalize()
+
+
+def entry_timestamp_for_expiry(
+    x: pd.DataFrame,
+    expiry: pd.Timestamp,
+    cfg,
+) -> pd.Timestamp | None:
+    entry_date = entry_date_for_expiry(expiry, cfg)
+    hh, mm = map(int, cfg.entry_time.split(":"))
+    m = (
+        (x["timestamp"].dt.normalize() == entry_date)
+        & (
+            (x["timestamp"].dt.hour > hh)
+            | ((x["timestamp"].dt.hour == hh) & (x["timestamp"].dt.minute >= mm))
+        )
+    )
     ts = x.loc[m, "timestamp"]
     return ts.min() if not ts.empty else None
 
@@ -59,7 +75,7 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
     x["entry_price"] = pd.to_numeric(x[entry_column], errors="coerce")
     x = add_executable_prices(x, slippage_points=costs.slippage_points_per_leg)
     x["expiry"] = expiry
-    entry_ts = entry_timestamp_for_expiry(x, expiry, cfg.entry_weekday, cfg.entry_time)
+    entry_ts = entry_timestamp_for_expiry(x, expiry, cfg)
     if entry_ts is None:
         return None
     entry_chain = x[x["timestamp"] == entry_ts].copy()
@@ -168,9 +184,8 @@ def main() -> None:
     spot = load_spot(Path(args.spot))
     files = sorted(Path(args.options_dir).rglob("*.parquet"))
     # The baseline must hold only the NEXT available expiry for a given entry date.
-    # Multiple expiry files can map to the same Wednesday entry date (e.g. this week's
-    # and next week's expiry). The old runner could therefore open overlapping trades.
-    # Build the mapping once from the complete expiry universe and skip later expiries.
+    # Multiple expiry files can map to the same entry date. Keep the earliest expiry
+    # so the control strategy opens at most one position per entry date.
     parsed = []
     for f in files:
         expiry = expiry_from_filename(f)
@@ -178,17 +193,13 @@ def main() -> None:
             parsed.append((expiry, f))
     parsed.sort(key=lambda z: z[0])
 
-    def entry_date_for_expiry(expiry: pd.Timestamp) -> pd.Timestamp:
-        offset = (expiry.weekday() - cfg.entry_weekday) % 7
-        if offset == 0:
-            offset = 7
-        return (expiry - pd.Timedelta(days=offset)).normalize()
-
     next_expiry_by_entry_date = {}
     for expiry, _ in parsed:
-        entry_date = entry_date_for_expiry(expiry)
+        entry_date = entry_date_for_expiry(expiry, cfg)
         if entry_date not in next_expiry_by_entry_date:
             next_expiry_by_entry_date[entry_date] = expiry
+
+
 
     rows = []
     skipped_not_next = 0
