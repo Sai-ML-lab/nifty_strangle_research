@@ -156,3 +156,30 @@ def test_entry_optimizer_targetable_rows_are_not_double_counted_in_explanation_c
     )
     assert "target_band_hit_5lot_current" in out.columns
     assert out["target_band_hit_5lot_current"].dtype == bool
+
+
+def test_entry_optimizer_empty_walk_forward_selection_preserves_schema():
+    from src.entry_timing_optimizer import walk_forward_select, WALK_FORWARD_SELECTION_COLUMNS
+
+    x = pd.DataFrame(
+        {
+            "entry_timestamp": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+            "dte": [6, 6],
+            "sd": [2.0, 2.0],
+            "profit_capture": [0.75, 0.75],
+            "stop_multiple": [2.5, 2.5],
+            "entry_weekday": ["Thursday", "Friday"],
+            "net_pnl_5lot_current": [7000.0, 7000.0],
+            "target_band_hit_5lot_current": [True, True],
+        }
+    )
+    selected, oos = walk_forward_select(
+        x,
+        train_months=12,
+        test_months=3,
+        rebalance_months=3,
+        min_train_trades=25,
+    )
+    assert selected.empty
+    assert list(selected.columns) == WALK_FORWARD_SELECTION_COLUMNS
+    assert oos.empty
