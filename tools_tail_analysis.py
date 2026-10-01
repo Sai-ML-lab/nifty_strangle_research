@@ -36,6 +36,14 @@ def analyze_tails(trades: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         else np.nan
     )
     x["abs_spot_move_pct"] = x["spot_move_pct"].abs()
+    if {"put_strike", "call_strike", "exit_spot"}.issubset(x.columns):
+        x["tail_side"] = np.select(
+            [x["exit_spot"] < x["put_strike"], x["exit_spot"] > x["call_strike"]],
+            ["put_side", "call_side"],
+            default="inside_short_strikes",
+        )
+    else:
+        x["tail_side"] = "unknown"
     x["loss_bucket"] = pd.cut(
         x["loss_to_credit"],
         bins=[-np.inf, 0, 1, 2, 3, 5, 10, np.inf],
@@ -52,6 +60,7 @@ def analyze_tails(trades: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             avg_loss=("net_pnl", "mean"),
             worst_loss=("net_pnl", "min"),
             median_abs_spot_move_pct=("abs_spot_move_pct", "median"),
+            max_loss_to_credit=("loss_to_credit", "max"),
         )
         .reset_index()
         .sort_values("total_net_pnl")

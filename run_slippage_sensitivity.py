@@ -14,7 +14,7 @@ def main() -> None:
     ap.add_argument("--options-dir", required=True, help="Directory of per-expiry option Parquets")
     ap.add_argument("--out-dir", default="results/slippage_replay")
     ap.add_argument("--config", default="config_dte6_ivrv2.yaml", help="Cost configuration used for the replay")
-    ap.add_argument("--slippages", nargs="+", type=float, default=[0.0, 0.10, 0.25, 0.50, 0.75, 1.00], help="Per-leg slippage in option points")
+    ap.add_argument("--slippages", nargs="+", type=float, default=[0.0, 0.25, 0.50, 0.75, 1.00, 1.50], help="Per-leg slippage in option points")
     ap.add_argument("--include-quality-warnings", action="store_true")
     args = ap.parse_args()
     out = Path(args.out_dir)
