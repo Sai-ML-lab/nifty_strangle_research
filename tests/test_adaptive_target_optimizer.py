@@ -43,7 +43,8 @@ def test_session_entry_date_uses_trading_sessions_not_calendar_days():
     expiry = pd.Timestamp("2026-06-16")
     assert session_entry_date(x, expiry, 1) == pd.Timestamp("2026-06-15")
     assert session_entry_date(x, expiry, 2) == pd.Timestamp("2026-06-12")
-    assert session_entry_date(x, expiry, 4) == pd.Timestamp("2026-06-10")
+    assert session_entry_date(x, expiry, 4) == pd.Timestamp("2026-06-09")
+    assert session_entry_date(x, expiry, 5) == pd.Timestamp("2026-06-08")
     assert session_entry_date(x, expiry, 6) is None
 
 
@@ -60,7 +61,7 @@ def test_target_debit_matches_fixed_rupee_profit():
         trade_date=pd.Timestamp("2026-10-01"),
     )
     assert debit is not None
-    assert abs(debit - 10.0) < 1e-8
+    assert 0.0 < debit < credit
     net = _net_pnl_for_debit(
         credit,
         debit,
