@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable
 
@@ -53,7 +54,7 @@ def build_sd_ledgers(
     for i, (entry_date, (expiry, f)) in enumerate(sorted(chosen.items()), 1):
         raw = pd.read_parquet(f)
         for sd in ledgers:
-            cfg = base_cfg.__class__(**{**base_cfg.__dict__, "sd_multiple": sd, "min_iv_rv_spread": None})
+            cfg = replace(base_cfg, sd_multiple=sd, min_iv_rv_spread=None)
             row = single_expiry_trade(raw, spot, cfg, costs, expiry)
             if row is not None:
                 row["sd_multiple"] = sd
