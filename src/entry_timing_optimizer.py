@@ -226,6 +226,14 @@ def build_candidate_trades(
 
     rv20 = _daily_rv20(spot)
     rows: list[dict] = []
+    earliest_by_dte_entry: dict[tuple[int, pd.Timestamp], pd.Timestamp] = {}
+    for expiry, _ in files:
+        for dte in dtes:
+            entry_date = (expiry - pd.Timedelta(days=int(dte))).normalize()
+            key = (int(dte), entry_date)
+            previous = earliest_by_dte_entry.get(key)
+            if previous is None or expiry < previous:
+                earliest_by_dte_entry[key] = expiry
 
     for idx, (expiry, path) in enumerate(files, 1):
         raw = pd.read_parquet(path)
@@ -243,6 +251,8 @@ def build_candidate_trades(
 
         for dte in dtes:
             entry_date = (expiry - pd.Timedelta(days=int(dte))).normalize()
+            if earliest_by_dte_entry.get((int(dte), entry_date)) != expiry:
+                continue
             entry_ts = _entry_timestamp(x, entry_date, base_cfg.entry_time)
             if entry_ts is None:
                 continue
