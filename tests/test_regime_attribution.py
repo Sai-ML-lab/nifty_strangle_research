@@ -22,7 +22,7 @@ def test_regime_attribution_uses_fixed_diagnostic_buckets():
     assert list(x["iv_rv_bucket"]) == ["<0", "0-1", "1-2", "3+"]
     assert list(x["rv20_bucket"]) == ["<10%", "10-15%", "15-20%", "25%+"]
     assert list(x["credit_bucket"]) == ["<3", "3-5", "5-8", "12+"]
-    assert int(x.loc[1, "loss_to_credit_multiple"]) == 0 + 1
+    assert float(x.loc[1, "loss_to_credit_multiple"]) == 0.5
     s = summarize_dimensions(x)
     assert {"dimension", "bucket", "trades", "total_net_pnl"}.issubset(s.columns)
 
