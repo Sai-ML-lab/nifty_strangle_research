@@ -204,7 +204,7 @@ def main() -> None:
     rows = []
     skipped_not_next = 0
     for i, (expiry, f) in enumerate(parsed, 1):
-        entry_date = entry_date_for_expiry(expiry)
+        entry_date = entry_date_for_expiry(expiry, cfg)
         if next_expiry_by_entry_date.get(entry_date) != expiry:
             skipped_not_next += 1
             continue
