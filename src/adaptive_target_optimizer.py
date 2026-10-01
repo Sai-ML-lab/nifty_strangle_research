@@ -605,7 +605,15 @@ def walk_forward_adaptive(
     min_train_trades: int = 20,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if trades.empty:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(
+            columns=[
+                "train_start", "train_end", "test_start", "test_end",
+                "selected_session_offset", "selected_sd", "selected_target_rupees",
+                "selected_stop_multiple", "train_trades", "train_expectancy",
+                "train_profit_factor", "train_target_hit_rate", "test_trades",
+                "selection_status",
+            ]
+        ), pd.DataFrame()
 
     x = trades.copy()
     x["entry_timestamp"] = pd.to_datetime(x["entry_timestamp"])
@@ -646,8 +654,29 @@ def walk_forward_adaptive(
             continue
 
         eligible = policies[policies["stable_train"]].copy()
-        pool = eligible if not eligible.empty else policies
-        pool = pool.sort_values(
+        if eligible.empty:
+            selected_rows.append(
+                {
+                    "train_start": train_start,
+                    "train_end": train_end - pd.Timedelta(days=1),
+                    "test_start": train_end,
+                    "test_end": test_end - pd.Timedelta(days=1),
+                    "selected_session_offset": np.nan,
+                    "selected_sd": np.nan,
+                    "selected_target_rupees": np.nan,
+                    "selected_stop_multiple": np.nan,
+                    "train_trades": int(len(train)),
+                    "train_expectancy": np.nan,
+                    "train_profit_factor": np.nan,
+                    "train_target_hit_rate": np.nan,
+                    "test_trades": 0,
+                    "selection_status": "NO_STABLE_POLICY",
+                }
+            )
+            train_start = month_add(train_start, rebalance_months)
+            continue
+
+        pool = eligible.sort_values(
             ["expectancy", "profit_factor", "target_hit_rate"],
             ascending=[False, False, False],
         )
@@ -679,6 +708,7 @@ def walk_forward_adaptive(
                 "train_profit_factor": float(best["profit_factor"]),
                 "train_target_hit_rate": float(best["target_hit_rate"]),
                 "test_trades": int(len(test_slice)),
+                "selection_status": "SELECTED",
             }
         )
         if not test_slice.empty:
@@ -688,7 +718,14 @@ def walk_forward_adaptive(
 
         train_start = month_add(train_start, rebalance_months)
 
-    selected = pd.DataFrame(selected_rows)
+    selected_columns = [
+        "train_start", "train_end", "test_start", "test_end",
+        "selected_session_offset", "selected_sd", "selected_target_rupees",
+        "selected_stop_multiple", "train_trades", "train_expectancy",
+        "train_profit_factor", "train_target_hit_rate", "test_trades",
+        "selection_status",
+    ]
+    selected = pd.DataFrame(selected_rows, columns=selected_columns)
     oos = pd.concat(oos_rows, ignore_index=True) if oos_rows else pd.DataFrame()
     return selected, oos
 
