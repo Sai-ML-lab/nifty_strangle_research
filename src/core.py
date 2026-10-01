@@ -64,7 +64,9 @@ class StrategyConfig:
     minimum_volume: float = 0.0
     profit_capture: float = 0.50
     stop_multiple: float = 2.0
+    time_exit_mode: str = "weekday"   # weekday | days_before_expiry
     time_exit_weekday: int = 0
+    time_exit_dte: int = 1
     time_exit_time: str = "15:00"
     settle_at_expiry: bool = True
     lots: int = 1
