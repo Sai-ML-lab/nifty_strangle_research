@@ -58,6 +58,27 @@ def _entry_timestamp(x: pd.DataFrame, entry_date: pd.Timestamp, entry_time: str)
     return values.min() if not values.empty else None
 
 
+def _merge_spot_reference(options: pd.DataFrame, spot: pd.DataFrame) -> pd.DataFrame:
+    x = options.copy()
+    s = spot[["timestamp", "spot"]].copy()
+    x = x.merge(
+        s,
+        on="timestamp",
+        how="left",
+        suffixes=("", "_spot_ref"),
+        validate="many_to_one",
+    )
+    if "spot_spot_ref" in x.columns:
+        vendor_spot = pd.to_numeric(x["spot"], errors="coerce")
+        reference_spot = pd.to_numeric(x["spot_spot_ref"], errors="coerce")
+        x["spot"] = vendor_spot.where(vendor_spot.notna(), reference_spot)
+        x = x.drop(columns=["spot_spot_ref"])
+    if "spot" not in x.columns:
+        raise ValueError("No spot column available after option/spot merge")
+    x["spot"] = pd.to_numeric(x["spot"], errors="coerce")
+    return x
+
+
 def _daily_rv20(spot: pd.DataFrame) -> pd.Series:
     y = spot.copy()
     y["date"] = y["timestamp"].dt.normalize()
@@ -240,17 +261,7 @@ def build_candidate_trades(
         x = normalize_options_vendor_file(raw)
         if getattr(x["timestamp"].dt, "tz", None) is not None:
             x["timestamp"] = x["timestamp"].dt.tz_localize(None)
-        x = x.merge(spot, on="timestamp", how="left", suffixes=("", "_spot_ref"), validate="many_to_one")
-        # Some vendor Parquets already contain spot. Prefer the normalized spot reference,
-        # but preserve an existing non-null vendor spot when the reference is missing.
-        if "spot_spot_ref" in x.columns:
-            vendor_spot = pd.to_numeric(x["spot"], errors="coerce")
-            reference_spot = pd.to_numeric(x["spot_spot_ref"], errors="coerce")
-            x["spot"] = vendor_spot.where(vendor_spot.notna(), reference_spot)
-            x = x.drop(columns=["spot_spot_ref"])
-        if "spot" not in x.columns:
-            raise ValueError("No spot column available after option/spot merge")
-        x["spot"] = pd.to_numeric(x["spot"], errors="coerce")
+        x = _merge_spot_reference(x, spot)
         x["future"] = np.nan
         if "open" in x.columns:
             x["entry_price"] = pd.to_numeric(x["open"], errors="coerce")
