@@ -653,3 +653,58 @@ adaptive_target_capture_summary.csv
 ```
 
 Interpret the fixed-rupee target as an exit objective, not a guarantee. The research decision remains driven by out-of-sample expectancy, profit factor, tail losses, drawdown, slippage sensitivity and independent-data validation.
+
+
+## Research branch: adaptive robustness battery
+
+Branch: `research/adaptive-robustness`
+
+This branch is exploratory and leaves the frozen `main` paper strategy unchanged. It stress-tests the adaptive rupee-target strategy before any decision about promotion.
+
+The robustness battery covers:
+
+- exact end-to-end slippage rebuilds at configurable option-point slippage per leg;
+- a **baseline-selection-frozen** slippage test, where the walk-forward decisions are held fixed and only execution friction changes;
+- a separate **reoptimized walk-forward** slippage test, showing how the whole selection pipeline behaves when costs change;
+- same-entry-date pairing against the frozen DTE6 / 2-SD / 75% / 2.5x control;
+- OOS breakdowns by requested rupee target and trading-session entry offset;
+- winner-concentration analysis after removing the largest 1, 3, 5 and 10 profitable trades.
+
+Run:
+
+```bash
+python run_adaptive_robustness.py \
+  --options-dir /absolute/path/to/data/trademarkk/processed \
+  --spot /absolute/path/to/data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_frozen_75_25.yaml \
+  --out-dir results/adaptive_robustness \
+  --lots 5 \
+  --reference-lot-size 65 \
+  --session-offsets 2 3 4 5 6 \
+  --sds 1.5 1.75 2.0 2.25 \
+  --targets 6000 7000 8000 \
+  --stop-multiples 2.0 2.5 \
+  --stress-slippages 0.5 0.75 1.0 1.25 1.5 \
+  --winner-removals 1 3 5 10
+```
+
+Key outputs:
+
+```text
+baseline_walk_forward_selection.csv
+baseline_walk_forward_oos_trades.csv
+baseline_walk_forward_oos_report.csv
+winner_concentration.csv
+oos_by_target.csv
+oos_by_session_offset.csv
+oos_by_target_and_session_offset.csv
+frozen_control_trades.csv
+paired_adaptive_vs_frozen_control.csv
+paired_adaptive_vs_frozen_control_report.csv
+slippage_stress.csv
+slippage_<level>_baseline_selection_oos.csv
+```
+
+Interpret the two slippage modes differently. `baseline_selection_frozen` answers whether the already-selected strategy survives worse execution. `reoptimized_walk_forward` answers whether the complete research pipeline can still find stable policies under that execution assumption.
+
+Do not merge this branch into `main` until the adaptive strategy remains economically meaningful after execution stress, winner-concentration checks and independent-data validation.
