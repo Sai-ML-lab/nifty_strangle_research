@@ -1,0 +1,26 @@
+# Local environments and secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# macOS metadata
+.DS_Store
+
+# Research data and generated outputs
+*.csv
+*.parquet
+data/*
+results/*
+
+# Keep repository documentation in data/
+!data/README.md

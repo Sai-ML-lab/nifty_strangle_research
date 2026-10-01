@@ -1,0 +1,44 @@
+underlying: NIFTY
+lot_size: 65
+risk_free_rate: 0.06
+calendar_days_per_year: 365
+trading_days_per_year: 252
+
+entry:
+  weekday: 2            # Monday=0, Wednesday=2
+  time: "10:00"
+
+strike_selection:
+  method: pure_sd        # pure_sd | delta | hybrid
+  sd_multiple: 2.0
+  target_delta: 0.05
+  atm_band: 3
+  minimum_oi: 0
+  minimum_volume: 0
+
+exit:
+  profit_capture: 0.50
+  stop_multiple: 2.0
+  time_exit_time: "15:00"
+  time_exit_weekday: 0 # Monday
+  settle_at_expiry: true
+
+costs:
+  brokerage_per_order: 20.0
+  stt_sell_option_pct: 0.0015
+  exchange_txn_pct: 0.0003553
+  sebi_turnover_pct: 0.000001
+  stamp_duty_buy_option_pct: 0.00003
+  gst_pct: 0.18
+  slippage_points_per_leg: 0.50
+
+backtest:
+  starting_capital: 1000000
+  lots: 1
+  min_entry_credit_points: 1.0
+  allow_overlapping_trades: false
+  require_iv: false
+
+iron_condor:
+  enabled: true
+  wing_offset_points: 500
