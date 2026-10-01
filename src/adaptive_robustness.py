@@ -9,7 +9,7 @@ import pandas as pd
 
 from src.adaptive_target_optimizer import summarize_oos, walk_forward_adaptive
 from src.core import Costs
-from src.entry_timing_optimizer import add_lot_metrics, build_candidate_trades
+from src.entry_timing_optimizer import _exit_trade, _merge_spot_reference, add_lot_metrics
 
 
 ROBUSTNESS_PNL = "net_pnl_current"
@@ -280,26 +280,125 @@ def build_frozen_control_trades(
     *,
     options_dir: Path,
     spot: pd.DataFrame,
+    adaptive_oos: pd.DataFrame,
     base_cfg,
     costs: Costs,
     reference_lot_size: int,
     lots: int,
 ) -> pd.DataFrame:
-    control = build_candidate_trades(
-        options_dir=options_dir,
-        spot=spot,
-        base_cfg=replace(
-            base_cfg,
-            target_dte=6,
-            sd_multiple=2.0,
-            strike_method="pure_sd",
-        ),
-        costs=costs,
-        dtes=(6,),
-        sds=(2.0,),
-        profit_captures=(0.75,),
-        stop_multiples=(2.5,),
-    )
+    """Build a frozen 2SD/75%/2.5x control at the adaptive trade's exact entry+expiry.
+
+    This deliberately does not require the control entry date to be exactly six
+    calendar days before expiry. The comparison is same timestamp + same expiry,
+    so it isolates strike/exit mechanics from the adaptive session-timing choice.
+    """
+    if adaptive_oos.empty:
+        return pd.DataFrame()
+
+    target_expiries = pd.to_datetime(adaptive_oos["expiry"]).dt.normalize().drop_duplicates()
+    requested = adaptive_oos.copy()
+    rows: list[dict] = []
+
+    for expiry in target_expiries:
+        expiry = pd.Timestamp(expiry).normalize()
+        matches = requested[
+            pd.to_datetime(requested["expiry"]).dt.normalize().eq(expiry)
+        ].copy()
+        path = None
+        for candidate in sorted(options_dir.rglob("*.parquet")):
+            stem = candidate.stem.replace("expiry=", "")
+            try:
+                candidate_expiry = pd.Timestamp(stem).normalize()
+            except Exception:
+                continue
+            if candidate_expiry == expiry:
+                path = candidate
+                break
+        if path is None:
+            continue
+
+        raw = pd.read_parquet(path)
+        x = normalize_options_vendor_file(raw)
+        if getattr(x["timestamp"].dt, "tz", None) is not None:
+            x["timestamp"] = x["timestamp"].dt.tz_localize(None)
+        x = _merge_spot_reference(x, spot)
+        x["future"] = np.nan
+        if "open" in x.columns:
+            x["entry_price"] = pd.to_numeric(x["open"], errors="coerce")
+        else:
+            x["entry_price"] = pd.to_numeric(x["ltp"], errors="coerce")
+        from src.core import add_executable_prices, ensure_iv_delta, estimate_forward_from_parity, pick_atm_iv, select_strikes
+        x = add_executable_prices(x, slippage_points=costs.slippage_points_per_leg)
+        x["expiry"] = expiry
+
+        for _, requested_row in matches.iterrows():
+            entry_ts = pd.Timestamp(requested_row["entry_timestamp"])
+            entry_chain = x[x["timestamp"].eq(entry_ts)].dropna(
+                subset=["spot", "entry_price"]
+            ).copy()
+            if entry_chain.empty:
+                continue
+            spot0 = float(entry_chain["spot"].iloc[0])
+            forward = estimate_forward_from_parity(
+                entry_chain,
+                spot0,
+                base_cfg.risk_free_rate,
+                price_column="entry_price",
+            )
+            entry_chain["forward"] = forward
+            try:
+                entry_chain = ensure_iv_delta(
+                    entry_chain,
+                    base_cfg.risk_free_rate,
+                    allow_iv_calc=True,
+                    price_column="entry_price",
+                )
+                atm_iv = pick_atm_iv(entry_chain, forward, base_cfg.atm_band)
+                cfg = replace(
+                    base_cfg,
+                    target_dte=6,
+                    sd_multiple=2.0,
+                    strike_method="pure_sd",
+                )
+                put, call = select_strikes(
+                    entry_chain,
+                    forward,
+                    atm_iv,
+                    expiry,
+                    entry_ts,
+                    cfg,
+                )
+                trade = _exit_trade(
+                    x=x,
+                    entry_ts=entry_ts,
+                    expiry=expiry,
+                    put_k=float(put["strike"]),
+                    call_k=float(call["strike"]),
+                    credit_points=_entry_credit(entry_chain, float(put["strike"]), float(call["strike"])),
+                    profit_capture=0.75,
+                    stop_multiple=2.5,
+                    lots=1,
+                    costs=costs,
+                    time_exit_dte=base_cfg.time_exit_dte,
+                    time_exit_time=base_cfg.time_exit_time,
+                )
+            except Exception:
+                continue
+            row = {
+                **trade,
+                "entry_spot": float(spot0),
+                "forward_entry": float(forward),
+                "atm_iv": float(atm_iv),
+                "session_offset": requested_row.get("session_offset", np.nan),
+                "sd": 2.0,
+                "profit_capture": 0.75,
+                "stop_multiple": 2.5,
+            }
+            rows.append(row)
+
+    control = pd.DataFrame(rows)
+    if control.empty:
+        return control
     return add_lot_metrics(
         control,
         costs,
