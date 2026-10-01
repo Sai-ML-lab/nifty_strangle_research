@@ -19,9 +19,15 @@ def analyze_tails(trades: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     x = x.dropna(subset=["entry_timestamp", "net_pnl"]).sort_values("entry_timestamp").copy()
 
     x["is_loss"] = x["net_pnl"] < 0
+    credit_rupees = pd.to_numeric(x.get("initial_credit_rupees", pd.Series(np.nan, index=x.index)), errors="coerce")
+    if credit_rupees.isna().all() and "initial_credit_points" in x.columns:
+        lot = pd.to_numeric(x.get("lot_size", pd.Series(1, index=x.index)), errors="coerce").fillna(1.0)
+        lots = pd.to_numeric(x.get("lots", pd.Series(1, index=x.index)), errors="coerce").fillna(1.0)
+        credit_rupees = pd.to_numeric(x["initial_credit_points"], errors="coerce") * lot * lots
+    x["initial_credit_rupees_for_ratio"] = credit_rupees
     x["loss_to_credit"] = np.where(
-        x.get("initial_credit_points", pd.Series(np.nan, index=x.index)).gt(0),
-        -x["net_pnl"] / x["initial_credit_points"],
+        credit_rupees.gt(0),
+        -x["net_pnl"] / credit_rupees,
         np.nan,
     )
     x["spot_move_pct"] = (

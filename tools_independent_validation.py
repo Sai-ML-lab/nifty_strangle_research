@@ -17,8 +17,10 @@ def compare_ledgers(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.
         x["entry_timestamp"] = pd.to_datetime(x["entry_timestamp"], errors="coerce")
         x["expiry"] = pd.to_datetime(x["expiry"], errors="coerce").dt.normalize()
 
+    a["entry_date"] = a["entry_timestamp"].dt.normalize()
+    b["entry_date"] = b["entry_timestamp"].dt.normalize()
     extra_keys = [c for c in ["put_strike", "call_strike"] if c in a.columns and c in b.columns]
-    keys = KEYS + extra_keys
+    keys = ["entry_date", "expiry"] + extra_keys
     keep_a = keys + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in a.columns]
     keep_b = keys + [c for c in ["initial_credit_points", "exit_timestamp", "exit_reason", "net_pnl", "data_quality_flag"] if c in b.columns]
     a = a[keep_a].rename(columns={c: f"primary_{c}" for c in keep_a if c not in keys})
