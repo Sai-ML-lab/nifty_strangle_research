@@ -89,6 +89,14 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
     try:
         entry_chain = ensure_iv_delta(entry_chain, cfg.risk_free_rate, allow_iv_calc=True, price_column="entry_price")
         atm_iv = pick_atm_iv(entry_chain, forward, cfg.atm_band)
+        rv20_value = (
+            float(entry_chain["rv20"].iloc[0])
+            if "rv20" in entry_chain.columns and pd.notna(entry_chain["rv20"].iloc[0])
+            else np.nan
+        )
+        if cfg.min_iv_rv_spread is not None:
+            if not np.isfinite(rv20_value) or (atm_iv - rv20_value) < float(cfg.min_iv_rv_spread) / 100.0:
+                return None
         put, call = select_strikes(entry_chain, forward, atm_iv, expiry, pd.Timestamp(entry_ts), cfg)
     except Exception:
         return None
@@ -172,8 +180,8 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
         "exit_spot": spot_final,
         "forward_entry": forward,
         "atm_iv": atm_iv,
-        "rv20": float(entry_chain["rv20"].iloc[0]) if "rv20" in entry_chain.columns and pd.notna(entry_chain["rv20"].iloc[0]) else np.nan,
-        "iv_rv_spread": float(atm_iv - entry_chain["rv20"].iloc[0]) if "rv20" in entry_chain.columns and pd.notna(entry_chain["rv20"].iloc[0]) else np.nan,
+        "rv20": rv20_value,
+        "iv_rv_spread": (atm_iv - rv20_value) if np.isfinite(rv20_value) else np.nan,
         "put_strike": pk,
         "call_strike": ck,
         "put_delta": float(put.delta),
