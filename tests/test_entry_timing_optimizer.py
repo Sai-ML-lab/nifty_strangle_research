@@ -34,7 +34,7 @@ def test_entry_optimizer_5lot_scaling_and_target_band():
     )
     assert len(out) == 2
     assert out.loc[0, "net_pnl_5lot"] > 6000
-    assert out.loc[0, "target_band_hit_5lot"] is True
+    assert bool(out.loc[0, "target_band_hit_5lot"]) is True
     assert out.loc[1, "net_pnl_5lot"] < 0
 
 
