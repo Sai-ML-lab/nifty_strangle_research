@@ -568,3 +568,88 @@ results/paper/logs/
 ```
 
 This automation is intentionally separate from any live-trading integration. If an Upstox MCP connection is later available, it can be used for read-only account/order reconciliation; the paper engine still uses Upstox market-data APIs so the signal is deterministic and auditable.
+
+## Research branch: entry timing + 5-lot profit target optimization
+
+Branch: `research/entry-timing-profit-target`
+
+This branch is exploratory and does **not** modify the frozen production/paper strategy on `main`. It tests a small pre-declared grid:
+
+- DTE: 4, 5, 6, 7, 8 calendar days before expiry
+- SD strike placement: 1.50, 1.75, 2.00, 2.25
+- profit capture: 50%, 75%
+- stop multiple: 2.0x, 2.5x
+- entry-weekday exclusions: none, or up to two excluded weekdays
+- one earliest usable expiry per entry date
+- 0.50 option-point slippage per leg from the frozen cost model
+
+The optimizer reports both full-sample diagnostics and a 12-month train / 3-month test / 3-month rebalance walk-forward. A weekday policy must have positive expectancy in both training halves before it can be selected. The 5-lot target is treated as a sizing/credit objective, not a guarantee of weekly income.
+
+Run locally against the full processed historical option directory:
+
+```bash
+python run_entry_timing_optimization.py \\
+  --options-dir data/trademarkk/processed \\
+  --spot data/trademarkk/index/NIFTY.parquet \\
+  --config config_dte6_frozen_75_25.yaml \\
+  --out-dir results/entry_timing_profit_target \\
+  --lots 5 \\
+  --target-low 6000 \\
+  --target-high 8000
+```
+
+Key outputs:
+
+- `stage_a_timing_policies.csv` — entry-timing/DTE diagnostics with the frozen 2-SD / 75% / 2.5x mechanics.
+- `full_sample_policies.csv` — joint exploratory policy table.
+- `walk_forward_selection.csv` — training-selected parameters by fold.
+- `walk_forward_oos_trades.csv` and `walk_forward_oos_report.csv` — unseen test-period results.
+- `target_credit_requirements.csv` — initial credit needed for 5 lots to net ₹6K/₹7K/₹8K at each tested capture rate.
+
+Do not merge this branch into `main` until the walk-forward OOS results, execution sensitivity and independent-data checks support the change.
+
+
+## Research branch: adaptive rupee targets + session timing
+
+Branch: `research/adaptive-rupee-target`
+
+This branch is exploratory and does not modify the frozen paper-trading strategy on `main`. It tests a cleaner target-oriented formulation:
+
+- entry timing is measured in trading sessions before expiry: E-2, E-3, E-4, E-5, E-6;
+- strike placement is tested at 1.50, 1.75, 2.00 and 2.25 SD;
+- the exit target is a fixed **net rupee amount** for the current position size, rather than a fixed percentage of premium;
+- target levels are ₹6,000, ₹7,000 and ₹8,000 for 5 current NIFTY lots (5 × 65 = 325 quantity);
+- the target debit is solved from the exact repository transaction-cost model, including date-aware STT;
+- a trade is retained only when the requested rupee target is mathematically reachable from the entry credit;
+- the stop remains 2.0x or 2.5x initial credit;
+- walk-forward selection requires positive expectancy and PF >= 1 in both training halves; unstable folds are not silently selected.
+
+Run:
+
+```bash
+python run_adaptive_rupee_target_optimization.py \
+  --options-dir /absolute/path/to/data/trademarkk/processed \
+  --spot /absolute/path/to/data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_frozen_75_25.yaml \
+  --out-dir results/adaptive_rupee_target \
+  --lots 5 \
+  --reference-lot-size 65 \
+  --session-offsets 2 3 4 5 6 \
+  --sds 1.5 1.75 2.0 2.25 \
+  --targets 6000 7000 8000 \
+  --stop-multiples 2.0 2.5
+```
+
+Outputs include:
+
+```text
+adaptive_candidate_trades.csv
+adaptive_full_sample_policies.csv
+adaptive_walk_forward_selection.csv
+adaptive_walk_forward_oos_trades.csv
+adaptive_walk_forward_oos_report.csv
+adaptive_oos_by_target.csv
+adaptive_target_capture_summary.csv
+```
+
+Interpret the fixed-rupee target as an exit objective, not a guarantee. The research decision remains driven by out-of-sample expectancy, profit factor, tail losses, drawdown, slippage sensitivity and independent-data validation.
