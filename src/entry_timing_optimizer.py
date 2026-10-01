@@ -424,7 +424,8 @@ def _policy_keys(max_excluded_days: int = 2) -> list[frozenset[str]]:
     from itertools import combinations
 
     policies: list[frozenset[str]] = [frozenset()]
-    for size in range(1, max(1, int(max_excluded_days)) + 1):
+    max_days = min(max(0, int(max_excluded_days)), len(WEEKDAYS))
+    for size in range(1, max_days + 1):
         for combo in combinations(WEEKDAYS, size):
             policies.append(frozenset(combo))
     return policies
@@ -546,6 +547,19 @@ def add_lot_metrics(
     x["reference_lot_size"] = int(reference_lot_size)
     return x
 
+def apply_target_gate(trades: pd.DataFrame, mode: str = "none", target_low: float = 6000.0, target_high: float = 8000.0) -> pd.DataFrame:
+    mode = str(mode).lower().strip()
+    if mode == "none":
+        return trades
+    if "target_net_pnl_5lot_current" not in trades.columns:
+        raise ValueError("Target metrics are required for target-gated research")
+    if mode == "floor":
+        return trades[trades["target_net_pnl_5lot_current"] >= float(target_low)]
+    if mode == "band":
+        return trades[trades["target_net_pnl_5lot_current"].between(float(target_low), float(target_high), inclusive="both")]
+    raise ValueError(f"Unknown target gate mode: {mode}")
+
+
 def apply_policy(trades: pd.DataFrame, exclude_weekdays: frozenset[str]) -> pd.DataFrame:
     if not exclude_weekdays:
         return trades
@@ -666,6 +680,7 @@ def walk_forward_select(
     pnl_column: str = "net_pnl_5lot",
     target_column: str = "target_band_hit_5lot",
     require_target_band: bool = False,
+    target_gate_mode: str = "none",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if trades.empty:
         return pd.DataFrame(
@@ -741,6 +756,7 @@ def walk_forward_select(
         test_cfg = apply_policy(x[key_mask], excluded)
         if require_target_band:
             test_cfg = test_cfg[test_cfg["target_band_hit_5lot_current"]].copy()
+        test_cfg = apply_target_gate(test_cfg, target_gate_mode, target_low, target_high)
         test_slice = test_cfg[
             (test_cfg["entry_timestamp"] >= train_end)
             & (test_cfg["entry_timestamp"] < test_end)
