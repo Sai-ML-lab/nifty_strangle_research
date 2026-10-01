@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-from dataclasses import replace
 
 from src.core import Costs, nifty_lot_size, option_value_at_expiry, trade_cost
 from src.data_ingest import normalize_options_vendor_file
@@ -30,6 +29,8 @@ def executable_sell_price(row: pd.Series, slippage_points: float) -> float:
         base = _numeric(row["entry_price"])
     else:
         base = _numeric(row.get("ltp"))
+    if not np.isfinite(base):
+        raise ValueError("No usable sell-side price in quote row")
     return max(base - float(slippage_points), 0.0)
 
 def executable_buy_price(row: pd.Series, slippage_points: float) -> float:
@@ -37,6 +38,8 @@ def executable_buy_price(row: pd.Series, slippage_points: float) -> float:
         base = _numeric(row["ask"])
     else:
         base = _numeric(row.get("ltp"))
+    if not np.isfinite(base):
+        raise ValueError("No usable buy-side price in quote row")
     return max(base + float(slippage_points), 0.0)
 
 def _quote_at(chain: pd.DataFrame, timestamp, strike: float, option_type: str) -> pd.Series | None:
@@ -86,7 +89,7 @@ def replay_trade(trade: pd.Series, chain: pd.DataFrame, slippage_points: float, 
 
     buy_premium = exit_debit_points * multiplier
     gross_pnl = sell_premium - buy_premium
-    costs_rupees = trade_cost(sell_premium + buy_premium, sell_premium, buy_premium, orders=4, costs=Costs(slippage_points_per_leg=float(slippage_points)), trade_date=entry_ts)
+    costs_rupees = trade_cost(sell_premium + buy_premium, sell_premium, buy_premium, orders=4, costs=replace(base_costs, slippage_points_per_leg=float(slippage_points)), trade_date=entry_ts)
     return {
         "entry_timestamp": entry_ts, "expiry": expiry, "exit_timestamp": exit_ts, "exit_reason": exit_reason,
         "put_strike": put_strike, "call_strike": call_strike, "lot_size": lot_size, "lots": lots,
