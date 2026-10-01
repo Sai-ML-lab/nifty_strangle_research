@@ -72,6 +72,8 @@ class StrategyConfig:
     lots: int = 1
     min_entry_credit_points: float = 1.0
     starting_capital: float = 1_000_000.0
+    min_iv_rv_spread: float | None = None
+    exclude_quality_warnings: bool = False
 
 
 @dataclass
