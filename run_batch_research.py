@@ -148,10 +148,18 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
         exit_ts = expiry
         exit_reason = "expiry"
         exit_debit_points = intrinsic
+        intrinsic_gap_points = 0.0
+        data_quality_flag = "PASS"
     else:
         buy_premium = exit_debit * multiplier
         spot_final = float(path[path.timestamp == exit_ts].spot.iloc[0])
         exit_debit_points = exit_debit
+        intrinsic = option_value_at_expiry(pk, spot_final, "PE") + option_value_at_expiry(ck, spot_final, "CE")
+        intrinsic_gap_points = float(exit_debit_points - intrinsic)
+        # A quoted option/combined debit should not be below intrinsic value by more
+        # than a tiny numerical tolerance. Flag vendor/timestamp inconsistencies rather
+        # than silently treating them as a strategy loss.
+        data_quality_flag = "WARN_INTRINSIC_VIOLATION" if intrinsic_gap_points < -1.0 else "PASS"
 
     gross = sell_premium - buy_premium
     costs_rupees = trade_cost(sell_premium + buy_premium, sell_premium, buy_premium, 4, costs, pd.Timestamp(entry_ts))
@@ -174,6 +182,9 @@ def single_expiry_trade(x: pd.DataFrame, spot: pd.DataFrame, cfg, costs: Costs, 
         "exit_timestamp": exit_ts,
         "exit_reason": exit_reason,
         "exit_debit_points": exit_debit_points,
+        "exit_intrinsic_points": intrinsic,
+        "exit_intrinsic_gap_points": intrinsic_gap_points,
+        "data_quality_flag": data_quality_flag,
         "gross_pnl": gross,
         "transaction_cost": costs_rupees,
         "net_pnl": gross - costs_rupees,
