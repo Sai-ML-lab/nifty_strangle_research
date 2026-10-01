@@ -112,3 +112,71 @@ The original control is a fixed Wednesday 10:00 IST entry. It is not a like-for-
 Use config_dte6.yaml to run a separate 6-calendar-day-before-expiry experiment. This is intended to compare similar DTE exposure across the historical expiry-day regimes; it does not replace the original control.
 
 NSE references: https://nsearchives.nseindia.com/content/circulars/FAOP68685.pdf and https://nsearchives.nseindia.com/content/circulars/FAOP68747.pdf
+
+## Experiment 3: DTE6 + IV-RV filter + execution sensitivity
+
+Use the clean DTE6 trade ledger as the input to the IV-RV research. The threshold sweep is cheap because the filter is entry-only and does not alter the selected strikes for an already-generated trade:
+
+```bash
+python run_ivrv_research.py \
+  --trades results/trademarkk_dte6/baseline_trades.csv \
+  --out-dir results/ivrv
+```
+
+This produces:
+
+- `ivrv_threshold_sweep.csv` with a no-filter baseline plus candidate IV-RV thresholds.
+- `ivrv_walk_forward.csv` where the threshold is selected only from the preceding training window and then evaluated on the following test window.
+
+The default walk-forward setup is 12 months train / 3 months test / 3 months rebalance, with a minimum of 20 training trades for a threshold candidate.
+
+For the fixed 2-vol-point exploratory filter, use:
+
+```bash
+python run_batch_research.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_ivrv2.yaml \
+  --out-dir results/trademarkk_dte6_ivrv2
+```
+
+Run exact slippage sensitivity on the same fixed rule:
+
+```bash
+python run_slippage_sensitivity.py \
+  --options-dir data/trademarkk/processed \
+  --spot data/trademarkk/index/NIFTY.parquet \
+  --config config_dte6_ivrv2.yaml \
+  --out-dir results/slippage_sensitivity
+```
+
+The sensitivity runner defaults to 0, 0.10, 0.25, 0.50, 0.75 and 1.00 option points per leg. It reruns the actual backtest rather than simply subtracting a linear slippage estimate.
+
+## Data-quality handling
+
+The batch runner records `data_quality_flag` and `exit_intrinsic_gap_points`. An early-exit quote is flagged when its combined buy debit is more than 1 point below the intrinsic value implied by the recorded NIFTY spot.
+
+Set:
+
+```yaml
+data_quality:
+  exclude_warnings: true
+```
+
+to exclude those trades from the result set. Always inspect the warnings first; do not assume every anomaly is a bad trade.
+
+## Interpreting Experiment 3
+
+Do not select the threshold with the largest full-sample P&L. The relevant evidence is the out-of-sample walk-forward result and its sensitivity to execution assumptions.
+
+The key outputs are:
+
+- out-of-sample net P&L
+- out-of-sample expectancy
+- positive test-fold count
+- selected threshold by fold
+- baseline test P&L versus filtered test P&L
+- worst test trade
+- slippage level at which the edge disappears
+
+Only after those checks should we proceed to SD/delta/exit optimization and the iron-condor comparison.
