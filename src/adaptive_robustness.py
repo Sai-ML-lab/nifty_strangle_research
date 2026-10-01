@@ -8,7 +8,15 @@ import numpy as np
 import pandas as pd
 
 from src.adaptive_target_optimizer import summarize_oos, walk_forward_adaptive
-from src.core import Costs
+from src.core import (
+    Costs,
+    add_executable_prices,
+    ensure_iv_delta,
+    estimate_forward_from_parity,
+    pick_atm_iv,
+    select_strikes,
+)
+from src.data_ingest import normalize_options_vendor_file
 from src.entry_timing_optimizer import _exit_trade, _merge_spot_reference, add_lot_metrics
 
 
@@ -327,7 +335,6 @@ def build_frozen_control_trades(
             x["entry_price"] = pd.to_numeric(x["open"], errors="coerce")
         else:
             x["entry_price"] = pd.to_numeric(x["ltp"], errors="coerce")
-        from src.core import add_executable_prices, ensure_iv_delta, estimate_forward_from_parity, pick_atm_iv, select_strikes
         x = add_executable_prices(x, slippage_points=costs.slippage_points_per_leg)
         x["expiry"] = expiry
 
