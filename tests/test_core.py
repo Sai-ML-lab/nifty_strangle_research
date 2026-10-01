@@ -138,3 +138,16 @@ def test_ivrv_walk_forward_selects_only_from_training_window():
     )
     assert not out.empty
     assert "selected_min_iv_rv_spread_pct" in out.columns
+
+
+def test_ivrv_no_filter_keeps_missing_rv_trades():
+    from src.ivrv import threshold_sweep
+
+    t = pd.DataFrame({
+        "entry_timestamp": pd.date_range("2026-01-01", periods=3, freq="D"),
+        "iv_rv_spread": [np.nan, 0.02, 0.03],
+        "net_pnl": [5.0, 10.0, -2.0],
+    })
+    out = threshold_sweep(t, thresholds=[2.0])
+    base = out[out["filter_enabled"] == False].iloc[0]
+    assert base["trades"] == 3
