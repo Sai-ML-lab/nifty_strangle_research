@@ -162,6 +162,26 @@ def test_frozen_slippage_price_adjustment():
     assert executable_buy_price(row, 0.5) == 110.5
 
 
+def test_frozen_slippage_replay_keeps_exit_decision_fixed():
+    from src.slippage_replay import replay_trade
+    chain = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-01-05 10:00"), "option_type": "PE", "strike": 23000, "entry_price": 100, "ltp": 100},
+        {"timestamp": pd.Timestamp("2026-01-05 10:00"), "option_type": "CE", "strike": 25000, "entry_price": 100, "ltp": 100},
+        {"timestamp": pd.Timestamp("2026-01-06 15:00"), "option_type": "PE", "strike": 23000, "entry_price": 40, "ltp": 40},
+        {"timestamp": pd.Timestamp("2026-01-06 15:00"), "option_type": "CE", "strike": 25000, "entry_price": 40, "ltp": 40},
+    ])
+    trade = pd.Series({
+        "entry_timestamp": "2026-01-05 10:00", "expiry": "2026-01-08",
+        "exit_timestamp": "2026-01-06 15:00", "exit_reason": "profit_target",
+        "put_strike": 23000, "call_strike": 25000, "lot_size": 50, "lots": 1,
+        "exit_spot": 24000, "net_pnl": 0.0, "data_quality_flag": "PASS",
+    })
+    a = replay_trade(trade, chain, 0.0)
+    b = replay_trade(trade, chain, 0.5)
+    assert a["exit_timestamp"] == b["exit_timestamp"] == pd.Timestamp("2026-01-06 15:00")
+    assert b["net_pnl"] < a["net_pnl"]
+
+
 def test_regime_gate_uses_training_only_for_activation():
     from src.regime_gate import walk_forward_ivrv_with_regime_gate
     dates = pd.date_range("2024-01-03", periods=30, freq="7D")
