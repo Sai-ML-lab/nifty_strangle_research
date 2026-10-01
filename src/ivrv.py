@@ -14,7 +14,7 @@ def _clean_trades(trades: pd.DataFrame, exclude_quality_warnings: bool = True) -
         x["entry_timestamp"] = pd.to_datetime(x["entry_timestamp"], errors="coerce")
     if exclude_quality_warnings and "data_quality_flag" in x:
         x = x[x["data_quality_flag"].fillna("PASS") == "PASS"].copy()
-    return x.dropna(subset=["net_pnl", "entry_timestamp", "iv_rv_spread"]).sort_values("entry_timestamp")
+    return x.dropna(subset=["net_pnl", "entry_timestamp"]).sort_values("entry_timestamp")
 
 
 def _stats(x: pd.DataFrame) -> dict:
@@ -45,7 +45,10 @@ def threshold_sweep(
     x = _clean_trades(trades, exclude_quality_warnings=exclude_quality_warnings)
     rows = [{"filter_enabled": False, "min_iv_rv_spread_pct": np.nan, **_stats(x)}]
     for threshold in thresholds:
-        y = x[x["iv_rv_spread"] >= float(threshold) / 100.0]
+        y = x[
+            x["iv_rv_spread"].notna()
+            & (x["iv_rv_spread"] >= float(threshold) / 100.0)
+        ]
         rows.append({
             "filter_enabled": True,
             "min_iv_rv_spread_pct": float(threshold),
@@ -87,7 +90,10 @@ def walk_forward_ivrv(
 
         candidates = []
         for threshold in thresholds:
-            tr = train[train["iv_rv_spread"] >= threshold / 100.0]
+            tr = train[
+                train["iv_rv_spread"].notna()
+                & (train["iv_rv_spread"] >= threshold / 100.0)
+            ]
             if len(tr) < min_train_trades:
                 continue
             s = _stats(tr)
