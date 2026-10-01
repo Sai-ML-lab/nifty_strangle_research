@@ -167,17 +167,47 @@ def main() -> None:
     cfg, costs, _ = load_config(args.config)
     spot = load_spot(Path(args.spot))
     files = sorted(Path(args.options_dir).rglob("*.parquet"))
-    rows = []
-    for i, f in enumerate(files, 1):
+    # The baseline must hold only the NEXT available expiry for a given entry date.
+    # Multiple expiry files can map to the same Wednesday entry date (e.g. this week's
+    # and next week's expiry). The old runner could therefore open overlapping trades.
+    # Build the mapping once from the complete expiry universe and skip later expiries.
+    parsed = []
+    for f in files:
         expiry = expiry_from_filename(f)
-        if expiry is None:
+        if expiry is not None:
+            parsed.append((expiry, f))
+    parsed.sort(key=lambda z: z[0])
+
+    def entry_date_for_expiry(expiry: pd.Timestamp) -> pd.Timestamp:
+        offset = (expiry.weekday() - cfg.entry_weekday) % 7
+        if offset == 0:
+            offset = 7
+        return (expiry - pd.Timedelta(days=offset)).normalize()
+
+    next_expiry_by_entry_date = {}
+    for expiry, _ in parsed:
+        entry_date = entry_date_for_expiry(expiry)
+        if entry_date not in next_expiry_by_entry_date:
+            next_expiry_by_entry_date[entry_date] = expiry
+
+    rows = []
+    skipped_not_next = 0
+    for i, (expiry, f) in enumerate(parsed, 1):
+        entry_date = entry_date_for_expiry(expiry)
+        if next_expiry_by_entry_date.get(entry_date) != expiry:
+            skipped_not_next += 1
             continue
+
         raw = pd.read_parquet(f)
         row = single_expiry_trade(raw, spot, cfg, costs, expiry)
         if row is not None:
             rows.append(row)
+
         if i % 25 == 0:
-            print(f"processed {i}/{len(files)} expiries; trades={len(rows)}")
+            print(
+                f"processed {i}/{len(parsed)} expiries; trades={len(rows)}; "
+                f"skipped_non_next={skipped_not_next}"
+            )
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
