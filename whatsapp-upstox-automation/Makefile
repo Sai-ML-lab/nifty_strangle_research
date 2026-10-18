@@ -1,0 +1,1 @@
+Placeholder file; canonical initial project is available in the downloadable ZIP.
